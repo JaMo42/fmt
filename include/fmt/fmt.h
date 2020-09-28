@@ -28,8 +28,6 @@ typedef void(*FmtPutch)(char **, char);
  *   'F' - Float, upper-case
  *   'e' - Float, lower-case exponent notation
  *   'E' - Float, lower-case exponent notation
- *   'g' - Float, lower-case general format
- *   'G' - Float, upper-case general format
  *   '%' - Float, multiplies number by 100, displays in 'f' format and adds a
  *         '%'
  *   't' - "struct tm", format specifier is replaced by a "strftime" format
@@ -42,6 +40,10 @@ typedef void(*FmtPutch)(char **, char);
  *
  * If no type but the unsigned flag is given, the type defaults to 'd',
  * otherwise to 's'.
+ *
+ * The locale flag ('n') is onlt available when compiling with
+ * "-DFMT_SUPPORT_LOCALE".
+ * The 't' type is only available when compiling with "-DFMT_SUPPORT_TIME".
  */
 int
 fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_list args);
