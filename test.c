@@ -107,9 +107,6 @@ int main()
   puts("|12.345,678900|");
 #endif
 
-  freelocale(us_loc);
-  freelocale(de_loc);
-
   // Format
   SEP;
   char *s = fmt_format("|{} {c} \"{f:{}^,+{}.{}}\"|\n", "msg", '=', '*', 20, 3, 3.1415926);
@@ -121,5 +118,25 @@ int main()
   SEP;
   fmt_print("{d}\n", fmt_formatted_length("{f:+,.{}}", 3, 3.1415926));
   puts("6");
+
+  // Implicit types
+  SEP;
+  fmt_print("{}\n", "Hello world");
+  puts("Hello world");
+
+  SEP;
+  fmt_print("|{u}|\n", 23);
+  puts("|23|");
+
+  SEP;
+  fmt_print("|{un}|\n", 23);
+  puts("|23|");
+
+  SEP;
+  fmt_print("|{n}|\n", 32);
+  puts("|23|");
+
+  freelocale(us_loc);
+  freelocale(de_loc);
 }
 

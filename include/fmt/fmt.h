@@ -38,7 +38,7 @@ typedef void(*FmtPutch)(char **, char);
  *
  *   "fill", "width" and "precision" may be given as parameters ("{}")
  *
- * If no type but the unsigned flag is given, the type defaults to 'd',
+ * If no type but the unsigned/locale flag is given, the type defaults to 'd',
  * otherwise to 's'.
  *
  * The locale flag ('n') is onlt available when compiling with

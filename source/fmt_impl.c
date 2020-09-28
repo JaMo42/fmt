@@ -220,6 +220,7 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
 #ifdef FMT_SUPPORT_LOCALE
   if (*p == 'n')
     {
+      *type = 'd';
       *locale_flag = true;
       ++p;
     }
