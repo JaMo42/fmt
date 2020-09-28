@@ -109,5 +109,17 @@ int main()
 
   freelocale(us_loc);
   freelocale(de_loc);
+
+  // Format
+  SEP;
+  char *s = fmt_format("|{} {c} \"{f:{}^,+{}.{}}\"|\n", "msg", '=', '*', 20, 3, 3.1415926);
+  fmt_print(s);
+  puts("|msg = \"*******+3.141*******\"|");
+  free(s);
+
+  // Formatted length
+  SEP;
+  fmt_print("{d}\n", fmt_formatted_length("{f:+,.{}}", 3, 3.1415926));
+  puts("6");
 }
 
