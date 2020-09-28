@@ -22,7 +22,7 @@ build/test.o: test.c
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 $(LIB).so: build/fmt.o build/fmt_impl.o
-	$(CC) $(LDFLAGS) -shared -o $@ $<
+	$(CC) $(LDFLAGS) -shared -o $@ $^
 
 $(LIB).a: build/fmt.o build/fmt_impl.o
 	ar rcs $@ $^
