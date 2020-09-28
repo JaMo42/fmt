@@ -36,6 +36,7 @@ fmt_format_putch(char **bufptr, char ch)
     {
       fmt_format_cap <<= 1;
       fmt_format_buf = realloc(fmt_format_buf, fmt_format_cap);
+      *bufptr = fmt_format_buf + fmt_format_len;
     }
   *(*bufptr)++ = ch;
   ++fmt_format_len;
