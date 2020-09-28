@@ -4,9 +4,13 @@ OPTFLAGS = -O3 -march=native -mtune=native
 CFLAGS = $(FEATURES) -Wall -Wextra -Iinclude
 LDFLAGS = -lm
 
+ifndef PREFIX
+	PREFIX = /usr/local
+endif
+
 LIB = libfmt
 
-all: test
+all: $(LIB).a $(LIB).so test
 
 build/fmt.o: source/fmt.c include/fmt/fmt.h
 	$(CC) $(CFLAGS) -fPIC -o $@ -c $<
@@ -21,13 +25,25 @@ $(LIB).so: build/fmt.o build/fmt_impl.o
 	$(CC) $(LDFLAGS) -shared -o $@ $<
 
 $(LIB).a: build/fmt.o build/fmt_impl.o
-	ar rcs $(LDFLAGS) -o $@ $<
+	ar rcs $@ $^
 
-test: build/fmt_impl.o build/fmt.o build/test.o
+test: build/test.o $(LIB).a
 	$(CC) $(LDFLAGS) -o $@ $^
 
 clean:
 	rm -f test build/*.o *.vgcore
 
-.PHONY: clean
+install: $(LIB).a $(LIB).so
+	@mkdir -p $(PREFIX)/include/fmt
+	@mkdir -p $(PREFIX)/lib
+	@cp -rv include/fmt $(PREFIX)/include
+	@cp -v $(LIB).a $(PREFIX)/lib/$(LIB).a
+	@cp -v $(LIB).so $(PREFIX)/lib/$(LIB).so
+
+uninstall:
+	@rm -rfv $(PREFIX)/include/fmt
+	@rm -fv $(PREFIX)/lib/$(LIB).a
+	@rm -fv $(PREFIX)/lib/$(LIB).so
+
+.PHONY: clean install
 
