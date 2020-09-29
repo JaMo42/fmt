@@ -82,7 +82,7 @@ The type may also be omitted, in this case:
 
 `[[fill]align]][sign][#][0][width][grouping][.precision]` (non-positional)
 
-- `fill` The character to use for padding
+- `fill` The character to use for padding. May also be given as a parameter (type `char`).
 
 - `align` The alignment, must one of
 
@@ -112,7 +112,7 @@ The type may also be omitted, in this case:
 
 - `0` Pad zeros, for integers and floats sets align to `=` and fill to `0`
 
-- `width` The width of the field
+- `width` The width of the field. May also be given as a parameter (type `int`).
 
 - `grouping`, must be either `,` or `_`.
 Enables grouping using either the given character or, if the locale flag is given, the one from the current locale.
@@ -123,6 +123,18 @@ For integers using binary, octal, or hexadecimal representation the separator is
   - `f` Specifies the length of the fraction.
 
   - `s` Specifies the maximum length of the string.
+
+  May also be given as a parameter (type `int`).
+
+If options are given as parameter, they are replaced by `{}` in the format specifier.
+Option parameters follow the value in the function arguments.
+
+It is not possible to directly use `{` or `}` as fill character, they have to be given as parameter.
+
+### Time format specifier
+
+If formatting a date-time object, the format specifier is replaced by a `strftime` format string.
+This string may also be given as a parameter, in which case the format specifier has to be just `{}`.
 
 ## Functions
 
