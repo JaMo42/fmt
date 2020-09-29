@@ -134,7 +134,7 @@ It is not possible to directly use `{` or `}` as fill character, they have to be
 ### Time format specifier
 
 If formatting a date-time object, the format specifier is replaced by a `strftime` format string.
-This string may also be given as a parameter, in which case the format specifier has to be just `{}`.
+This string may also be given as a parameter (type `char *`).
 
 ## Functions
 
