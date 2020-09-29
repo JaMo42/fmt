@@ -1,0 +1,6 @@
+build/*
+libfmt.a
+libfmt.so
+test
+example
+README.pdf
