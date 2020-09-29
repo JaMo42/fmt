@@ -195,25 +195,38 @@ fmt_print_signed(FMT_FORMATTER, int64_t number, FmtBase base)
 }
 
 static inline int
-fmt_print_float_digits(FmtPutch putch, char **buffer, double number, int precision, char dot, char grouping)
+fmt_print_float_digits(FmtPutch putch, char **buffer, double number, int precision, char dot, char grouping, bool alt)
 {
   uint64_t intpart = (uint64_t)number;
   int intpart_len = fmt_intlen(number, 10);
 
+  int written = intpart_len;
+
   if (grouping)
-    fmt_print_digits_grouped(putch, buffer, intpart, intpart_len, 10,
-                             "0123456789", grouping, 3);
+    {
+      fmt_print_digits_grouped(putch, buffer, intpart, intpart_len, 10,
+                               "0123456789", grouping, 3);
+      written += intpart_len / 3;
+    }
   else
     fmt_print_digits(putch, buffer, intpart, intpart_len, 10, "0123456789");
 
-  putch(buffer, dot);
+  if (precision > 0 || alt)
+    {
+      putch(buffer, dot);
+      ++written;
+    }
 
-  double fraction = number - intpart;
-  for (int i = 0; i < precision; ++i)
-    fraction *= 10;
-  fmt_print_digits(putch, buffer, (uint64_t)fraction, precision, 10,
-                   "0123456789");
-  return intpart_len + (grouping ? (intpart_len / 3) : 0) + 1 + precision;
+  if (precision > 0)
+    {
+      double fraction = number - intpart;
+      for (int i = 0; i < precision; ++i)
+        fraction *= 10;
+      fmt_print_digits(putch, buffer, (uint64_t)fraction, precision, 10,
+                       "0123456789");
+      written += precision;
+    }
+  return written;
 }
 
 static inline int
@@ -259,7 +272,7 @@ fmt_print_float(FMT_FORMATTER, double number, bool upper, char dot, char post)
   if (after_sign)
     FMT_PAD(lpad, padchar);
 
-  fmt_print_float_digits(putch, buffer, number, fs->precision, dot, fs->grouping);
+  fmt_print_float_digits(putch, buffer, number, fs->precision, dot, fs->grouping, fs->alternate_form);
 
   FMT_PAD(rpad, fs->fill);
 
@@ -331,7 +344,7 @@ fmt_print_scientific(FMT_FORMATTER, double number, bool upper, char dot)
   if (after_sign)
     FMT_PAD(lpad, padchar);
 
-  fmt_print_float_digits(putch, buffer, fraction, fs->precision, dot, 0);
+  fmt_print_float_digits(putch, buffer, fraction, fs->precision, dot, 0, false);
   putch(buffer, upper ? 'E' : 'e');
   putch(buffer, exp_sign);
   if (exp_len == 1)

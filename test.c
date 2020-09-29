@@ -63,17 +63,29 @@ int main()
   fmt_print("|{d:+}|\n", 42);
   puts("|+42|");
   SEP;
-  fmt_print("|{d: }|\n", -23);  // error
+  fmt_print("|{d: }|\n", -23);
   puts("|-23|");
   SEP;
   fmt_print("|{d: }|\n", 42);
   puts("| 42|");
   SEP;
-  fmt_print("|{d:=5}|\n", -23);  // error
+  fmt_print("|{d:=5}|\n", -23);
   puts("|-  23|");
   SEP;
   fmt_print("|{d:=+5}|\n", 23);
   puts("|+  23|");
+  SEP;
+  fmt_print("|{f:}|\n", 10.0);
+  puts("|10.000000|");
+  SEP;
+  fmt_print("|{f:.0}|\n", 10.0);
+  puts("|10|");
+  SEP;
+  fmt_print("|{f:#.0}|\n", 10.0);
+  puts("|10.|");
+  SEP;
+  fmt_print("|{e}|\n", 123456.789);
+  puts("|1.234567e+05|");
   SEP;
   // Datetime
 #ifdef FMT_SUPPORT_TIME
