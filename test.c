@@ -138,6 +138,12 @@ int main()
   fmt_print("{{n}}: {n}({p})\n", &written, &written);
   fmt_print("written = {d}\n", written);
 
+  // Change default type
+  SEP;
+  fmt_default_type = 'd';
+  fmt_print("|{}|\n", 23);
+  puts("|23|");
+
   freelocale(us_loc);
   freelocale(de_loc);
 }
