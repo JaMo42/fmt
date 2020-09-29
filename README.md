@@ -127,44 +127,44 @@ For integers using binary, octal, or hexadecimal representation the separator is
 The functions taking the `int n` parameter print at most `n` characters.
 
 ```cpp
-int fmt_print(const char *fmt, ...)
-int fmt_vprint(const char *fmt, va_list)
-int fmt_nprint(int n, const char *fmt, ...)
-int fmt_vnprint(int n, const char *fmt, va_list)
+int fmt_print(const char *fmt, ...);
+int fmt_vprint(const char *fmt, va_list);
+int fmt_nprint(int n, const char *fmt, ...);
+int fmt_vnprint(int n, const char *fmt, va_list);
 ```
 
 Print formatted text to `stdout`, return number of characters written.
 
 ```cpp
-int fmt_sprint(char *str, const char *fmt, ...)
-int fmt_vsprint(char *str, const char *fmt, va_list)
-int fmt_snprint(char *str, int n, const char *fmt, ...)
-int fmt_vsnprint(char *str, int n, const char *fmt, va_list)
+int fmt_sprint(char *str, const char *fmt, ...);
+int fmt_vsprint(char *str, const char *fmt, va_list);
+int fmt_snprint(char *str, int n, const char *fmt, ...);
+int fmt_vsnprint(char *str, int n, const char *fmt, va_list);
 ```
 
 Print formatted text in the buffer pointed to by `str`, return number or characters written.
 
 ```cpp
-int fmt_fprint(FILE *stream, const char *fmt, ...)
-int fmt_vfprint(FILE *stream, const char *fmt, va_list)
-int fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
-int fmt_vfnprint(FILE *stream, int n, const char *fmt, va_list)
+int fmt_fprint(FILE *stream, const char *fmt, ...);
+int fmt_vfprint(FILE *stream, const char *fmt, va_list);
+int fmt_fnprint(FILE *stream, int n, const char *fmt, ...);
+int fmt_vfnprint(FILE *stream, int n, const char *fmt, va_list);
 ```
 
 Print formatted text to the `stream`, return number of characters written.
 
 ```cpp
-char * fmt_format(const char *fmt, ...)
-char * fmt_vformat(const char *fmt, vs_list)
-char * fmt_nformat(int n, const char *fmt, ...)
-char * fmt_vnformat(int n, const char *fmt, va_list)
+char * fmt_format(const char *fmt, ...);
+char * fmt_vformat(const char *fmt, vs_list);
+char * fmt_nformat(int n, const char *fmt, ...);
+char * fmt_vnformat(int n, const char *fmt, va_list);
 ```
 
 Print formatted text into a newly allocated buffer and return it.
 
 ```cpp
-int fmt_formatted_length(const char *fmt, ...)
-int fmt_vformatted_length(const char *fmt, va_list args)
+int fmt_formatted_length(const char *fmt, ...);
+int fmt_vformatted_length(const char *fmt, va_list);
 ```
 
 Do not print anything, return the required length of the formatted text.
