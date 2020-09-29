@@ -6,6 +6,9 @@
 
 typedef void(*FmtPutch)(char **, char);
 
+// The type to used when no type is given and it is no implied (defaults to 's').
+extern char fmt_default_type;
+
 /**
  * Replacement fields:
  *   {[length_modifier][u][n][type][:format_specifier]}

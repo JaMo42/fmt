@@ -6,12 +6,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-#include <wchar.h>
+#include <limits.h>
 #include <locale.h>
 #include <time.h>
-#include <limits.h>
 
-#include <stdio.h>
+char fmt_default_type = 's';
 
 typedef enum
 {
@@ -378,7 +377,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
             }
 
           if (*p == '}' || *p == ':')
-            type = 's';
+            type = fmt_default_type;
           else
             p = fmt_parse_type(p, &lm, &unsigned_flag, &type, &locale_flag);
 
