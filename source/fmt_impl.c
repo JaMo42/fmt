@@ -10,7 +10,7 @@
 #include <locale.h>
 #include <time.h>
 
-char fmt_default_type = 's';
+const char *fmt_default_type = "s";
 
 typedef enum
 {
@@ -343,6 +343,12 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
   int written = 0;
   const char *p;
 
+  bool parsed_default_type = false;
+  char default_type;
+  FmtLengthModifier default_lm;
+  bool default_unsigned_flag;
+  bool default_locale_flag;
+
   char type;
   FmtLengthModifier lm;
   bool unsigned_flag;
@@ -377,7 +383,16 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
             }
 
           if (*p == '}' || *p == ':')
-            type = fmt_default_type;
+            {
+              if (!parsed_default_type)
+                fmt_parse_type(fmt_default_type, &default_lm,
+                               &default_unsigned_flag, &default_type,
+                               &default_locale_flag);
+              type = default_type;
+              unsigned_flag = default_unsigned_flag;
+              locale_flag = default_locale_flag;
+              lm = default_lm;
+            }
           else
             p = fmt_parse_type(p, &lm, &unsigned_flag, &type, &locale_flag);
 

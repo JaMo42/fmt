@@ -140,8 +140,8 @@ int main()
 
   // Change default type
   SEP;
-  fmt_default_type = 'd';
-  fmt_print("|{}|\n", 23);
+  fmt_default_type = "lld";
+  fmt_print("|{}|\n", 23LL);
   puts("|23|");
 
   freelocale(us_loc);
