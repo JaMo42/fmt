@@ -132,9 +132,11 @@ int main()
   fmt_print("|{un}|\n", 23);
   puts("|23|");
 
+  // Written
+  int written;
   SEP;
-  fmt_print("|{n}|\n", 32);
-  puts("|23|");
+  fmt_print("{{n}}: {n}({p})\n", &written, &written);
+  fmt_print("written = {d}\n", written);
 
   freelocale(us_loc);
   freelocale(de_loc);

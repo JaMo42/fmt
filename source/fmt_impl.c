@@ -226,10 +226,28 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
     }
 #endif
   // Type
-  if (isalpha(*p) || *p == '%')
+  if (memchr("scdbBoOxXfFeE%ptn", *p, 17))
     {
       *type = *p;
       ++p;
+    }
+  else
+    {
+      // Check if we mistook a flag for the type
+      if (*unsigned_flag)
+        *type = 'd';
+      else if (*lm == FMT_PTRDIFF)
+        {
+          *lm = FMT_NONE;
+          *type = 't';
+        }
+#ifdef FMT_SUPPORT_LOCALE
+      else if (*locale_flag)
+        {
+          *locale_flag = false;
+          *type = 'n';
+        }
+#endif
     }
   return p;
 }
@@ -452,8 +470,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
             case 'p':
               fs.grouping = 0;
               fs.alternate_form = true;
-              fs.sign = FMT_NEGATIVE;
-              written += fmt_print_number(putch, &buffer, &fs, arg.uint,
+              written += fmt_print_number(putch, &buffer, &fs, (size_t)arg.pointer,
                                           0, FMT_HEX_LOWER);
               break;
 #ifdef FMT_SUPPORT_TIME
@@ -462,9 +479,19 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
                                         arg.time);
               break;
 #endif
-            case 'N':
-              *va_arg(args, int*) = written;
+            case 'n':
+              arg.out = va_arg(args, int*);
+              *arg.out = written;
               break;
+            }
+        }
+      else if (*p == '}')
+        {
+          if (p[1] && p[1] == '}')
+            {
+              putch(&buffer, '}');
+              ++written;
+              ++p;
             }
         }
       else
