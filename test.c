@@ -22,6 +22,7 @@ int main()
   time_t _t = time(NULL);
   struct tm *t = localtime(&_t);
 
+  SEP;
   fmt_print("{} {s}\n", "one", "two");
   puts("one two");
   SEP;
@@ -128,7 +129,7 @@ int main()
   puts("|Gib = 2.718|");
   SEP;
   fmt_print("|{f:{}.{}}|\n", 2.7182, 5, 2);
-  puts("| 2.72|");
+  puts("| 2.71|");
 #ifdef FMT_SUPPORT_TIME
   SEP;
   fmt_print("|{t:{}}|\n", t, "%Y-%m-%d %H:%M");

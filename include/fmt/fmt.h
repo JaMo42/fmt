@@ -1,3 +1,24 @@
+/*
+ * Copyright (c) 2020 Jakob Mohrbacher
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 #ifndef FMT_H
 #define FMT_H
 #include <stddef.h>
@@ -6,48 +27,9 @@
 
 typedef void(*FmtPutch)(char **, char);
 
-// The type to used when no type is given and it is no implied (defaults to "s").
+// The type to use when no type is given and it is no implied (defaults to "s").
 extern const char * fmt_default_type;
 
-/**
- * Replacement fields:
- *   {[length_modifier][u][n][type][:format_specifier]}
- *
- *   "length_modifier" - Same as "printf"
- *   'u' - Integer argument is unsigned
- *   'n' - For integers and floats, get thousands separator and decimal point
- *         from current locale.
- *
- * Types:
- *   's' - String
- *   'c' - Ineger, gets converted to unicode character before printing
- *   'd' - Integer, decimal
- *   'b' - Integer, binary
- *   'o' - Integer, octal
- *   'x' - Integer, lower-case hex
- *   'X' - Integer, upper-case hex
- *   'n' - Integer, locale aware
- *   'f' - Float, lower-case
- *   'F' - Float, upper-case
- *   'e' - Float, lower-case exponent notation
- *   'E' - Float, lower-case exponent notation
- *   '%' - Float, multiplies number by 100, displays in 'f' format and adds a
- *         '%'
- *   't' - "struct tm", format specifier is replaced by a "strftime" format
- *         string
- *
- * Format specifier:
- *   [[fill]align][sign][#][0][width][grouping][.precision]
- *
- *   "fill", "width" and "precision" may be given as parameters ("{}")
- *
- * If no type but the unsigned/locale flag is given, the type defaults to 'd',
- * otherwise to 's'.
- *
- * The locale flag ('n') is onlt available when compiling with
- * "-DFMT_SUPPORT_LOCALE".
- * The 't' type is only available when compiling with "-DFMT_SUPPORT_TIME".
- */
 int
 fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_list args);
 

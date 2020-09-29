@@ -1,7 +1,34 @@
+/*
+ * Copyright (c) 2020 Jakob Mohrbacher
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
 #include "fmt/fmt.h"
+
+typedef union
+{
+  char *s;
+  FILE *f;
+} FmtPunningDevice;
 
 static void
 fmt_stdout_putch(char **bufptr, char ch)
@@ -16,6 +43,8 @@ fmt_buffer_putch(char **bufptr, char ch)
   *(*bufptr)++ = ch;
 }
 
+/* Old implementation, not threadsafe. Kept here for some reason
+
 static FILE *fmt_fprint_stream;
 
 static void
@@ -23,6 +52,14 @@ fmt_stream_putch(char **bufptr, char ch)
 {
   (void)bufptr;
   fputc(ch, fmt_fprint_stream);
+}
+*/
+
+static void
+fmt_stream_putch(char **streamptr, char ch)
+{
+  FmtPunningDevice pd = { .s = *streamptr };
+  fputc(ch, pd.f);
 }
 
 static int fmt_format_cap;
@@ -110,32 +147,36 @@ fmt_snprint(char *s, int n, const char *fmt, ...)
 }
 
 int
-fmt_vfprint(FILE *fp, const char *fmt, va_list args)
+fmt_vfprint(FILE *stream, const char *fmt, va_list args)
 {
-  fmt_fprint_stream = fp;
-  return fmt_format_impl(fmt_stream_putch, NULL, INT_MAX, fmt, args);
+  //fmt_fprint_stream = fp;
+  FmtPunningDevice pd = { .f = stream };
+  return fmt_format_impl(fmt_stream_putch, pd.s, INT_MAX, fmt, args);
 }
 
 int
-fmt_fprint(FILE *fp, const char *fmt, ...)
+fmt_fprint(FILE *stream, const char *fmt, ...)
 {
-  fmt_fprint_stream = fp;
-  FMT_VWRAPPER(fmt_stream_putch, NULL, INT_MAX, fmt, args);
+  //fmt_fprint_stream = fp;
+  FmtPunningDevice pd = { .f = stream };
+  FMT_VWRAPPER(fmt_stream_putch, pd.s, INT_MAX, fmt, args);
   return r;
 }
 
 int
-fmt_vfnprint(FILE *fp, int n, const char *fmt, va_list args)
+fmt_vfnprint(FILE *stream, int n, const char *fmt, va_list args)
 {
-  fmt_fprint_stream = fp;
-  return fmt_format_impl(fmt_stream_putch, NULL, n, fmt, args);
+  //fmt_fprint_stream = fp;
+  FmtPunningDevice pd = { .f = stream };
+  return fmt_format_impl(fmt_stream_putch, pd.s, n, fmt, args);
 }
 
 int
-fmt_fnprint(FILE *fp, int n, const char *fmt, ...)
+fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
 {
-  fmt_fprint_stream = fp;
-  FMT_VWRAPPER(fmt_stream_putch, NULL, n, fmt, args);
+  //fmt_fprint_stream = fp;
+  FmtPunningDevice pd = { .f = stream };
+  FMT_VWRAPPER(fmt_stream_putch, pd.s, n, fmt, args);
   return r;
 }
 
