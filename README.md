@@ -30,7 +30,7 @@ If you need literal curly braces, they can be escaped like this: `{{` and `}}`.
 
   - `x` Hexadecimal integer, lowercase
 
-  - `X` Hecadecimal integer, uppercase
+  - `X` Hexadecimal integer, uppercase
 
   - `f` Floating point, lowercase
 
@@ -50,7 +50,7 @@ If you need literal curly braces, they can be escaped like this: `{{` and `}}`.
 
   - `p` Pointer address
 
-  - `t` Datetime
+  - `t` Date-time
 
   - `n` Nothing is printed, the number of character written so far is stored in the argument.
 
@@ -114,7 +114,7 @@ The type may also be omitted, in this case:
 
 - `grouping`, must be either `,` or `_`.
 Enables grouping using either the given character or, if the locale flag is given, the one from the current locale.
-For integers using binary, ocatal, or hexdecimal representation the separator is placed every 4 digits.
+For integers using binary, octal, or hexadecimal representation the separator is placed every 4 digits.
 
 - `.precision`, for
 
@@ -181,7 +181,7 @@ int fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, v
 
 - `buffer` The buffer to print to, can be `NULL` (i.e. when printing to a stream).
 
-- `maxlen` maxium number of characters to write
+- `maxlen` maximum number of characters to write
 
 - `fmt` format string
 
@@ -197,8 +197,7 @@ typedef void(*FmtPutch)(char **bufptr, char ch);
 
 - `bufptr` A pointer to a pointer to the current position in buffer.
 If the `buffer` argument to `fmt_format_impl` was `NULL`, `*bufptr` is `NULL`.
-The pointer is not changed by `fmt_format_impl` and has to be advanced by the putch function.
-This means, that when passing something else using type punning, *bufptr will always stay the same (being the value passed to `fmt_format_impl` as `buffer`).
+The pointer is not changed by `fmt_format_impl` and has to be advanced by the `putch` function.
 
 - `ch` character to print
 
@@ -231,13 +230,13 @@ Make options:
 
 ## Requirements
 
-`pandoc` to use `make doc`, compiling the README to a pdf.
+`pandoc` to use `make doc`, compiling the README to a PDF.
 
 When using the static library, you'll also need to link `-lm`.
 
-## Acknowledgements
+## Acknowledgments
 
-The core desing with the `fmt_format_impl` and `putch` functions was inspired by [SerenityOS](https://github.com/SerenityOS/serenity)' [printf implementation](https://github.com/SerenityOS/serenity/blob/master/AK/PrintfImplementation.h).
+The core design with the `fmt_format_impl` and `putch` functions was inspired by [SerenityOS](https://github.com/SerenityOS/serenity)' [printf implementation](https://github.com/SerenityOS/serenity/blob/master/AK/PrintfImplementation.h).
 
 ## License
 
