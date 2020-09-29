@@ -56,17 +56,19 @@ If you need literal curly braces, they can be escaped like this: `{{` and `}}`.
 
 Expected types:
 
-|        | d b o O x X   | ud ub uo uO ux uX    | f e %         | c      | s        | B      | p        | n       | t             |
-|--------|---------------|----------------------|---------------|--------|----------|--------|----------|---------|---------------|
-| (none) | `int`         | `unsigned`           | `double`      | `char` | `char *` | \_Bool | `void *` | `int *` | `struct tm *` |
-| hh     | `signed char` | `unsigned char`      |               |        |          |        |          |         |               |
-| h      | `short`       | `unsigned short`     |               |        |          |        |          |         |               |
-| l      | `long`        | `unsigned long`      |               |        |          |        |          |         |               |
-| ll     | `long long`   | `unsigned long long` |               |        |          |        |          |         |               |
-| j      | `intmax_t`    | `uintmax_t`          |               |        |          |        |          |         |               |
-| z      | `intmax_t`    | `size_t`             |               |        |          |        |          |         |               |
-| t      | `ptrdiff_t`   | `size_t`             |               |        |          |        |          |         |               |
-| L      |               |                      | `long double` |        |          |        |          |         |               |
+Rows: Length modifier, Columns: Type specifier
+
+|        | d b o O x X   | ud ub uo uO ux uX    | f e %         | c      | s        | B       | p        | n       | t             |
+|--------|---------------|----------------------|---------------|--------|----------|---------|----------|---------|---------------|
+| (none) | `int`         | `unsigned`           | `double`      | `char` | `char *` | `_Bool` | `void *` | `int *` | `struct tm *` |
+| hh     | `signed char` | `unsigned char`      |               |        |          |         |          |         |               |
+| h      | `short`       | `unsigned short`     |               |        |          |         |          |         |               |
+| l      | `long`        | `unsigned long`      |               |        |          |         |          |         |               |
+| ll     | `long long`   | `unsigned long long` |               |        |          |         |          |         |               |
+| j      | `intmax_t`    | `uintmax_t`          |               |        |          |         |          |         |               |
+| z      | `intmax_t`    | `size_t`             |               |        |          |         |          |         |               |
+| t      | `ptrdiff_t`   | `size_t`             |               |        |          |         |          |         |               |
+| L      |               |                      | `long double` |        |          |         |          |         |               |
 
 Do note that the type string is positional, this is important as `n` and `t` are both types and flags and must be last element of the type string in order to be considered a type.
 
