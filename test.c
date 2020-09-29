@@ -8,6 +8,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <math.h>
+#include <stdbool.h>
 #include "fmt/fmt.h"
 #define SEP puts("========");
 
@@ -86,6 +87,32 @@ int main()
   SEP;
   fmt_print("|{e}|\n", 123456.789);
   puts("|1.234567e+05|");
+  SEP;
+  // Bases
+  fmt_print("|{d}|\n", 123456789);
+  puts("|123456789|");
+  SEP;
+  fmt_print("|{b:#}|\n", 123456789);
+  puts("|0b111010110111100110100010101|");
+  SEP;
+  fmt_print("|{o:#}|\n", 123456789);
+  puts("|0o726746425|");
+  SEP;
+  fmt_print("|{O:#}|\n", 123456789);
+  puts("|0726746425|");
+  SEP;
+  fmt_print("|{x:#}|\n", 123456789);
+  puts("|0x75bcd15|");
+  SEP;
+  fmt_print("|{X:#}|\n", 123456789);
+  puts("|0X75BCD15|");
+  SEP;
+  // Bools
+  fmt_print("|{B} {B}|\n", true, false);
+  puts("|true false|");
+  SEP;
+  fmt_print("|{B:#} {B:#}|\n", true, false);
+  puts("|True False|");
   SEP;
   // Datetime
 #ifdef FMT_SUPPORT_TIME

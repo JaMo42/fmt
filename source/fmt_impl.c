@@ -69,6 +69,7 @@ typedef union
   int64_t int_;
   uint64_t uint;
   double float_;
+  bool bool_;
   char char_;
   char *string;
   void *pointer;
@@ -288,7 +289,6 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
       break;
     case 'd':
     case 'b':
-    case 'B':
     case 'o':
     case 'O':
     case 'x':
@@ -306,9 +306,11 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
     case 'F':
     case 'e':
     case 'E':
-    case 'g':
-    case 'G':
+    case '%':
       FMT_GET_FLOAT(arg->float_, lm);
+      break;
+    case 'B':
+      arg->bool_ = (bool)va_arg(args, int);
       break;
     case 'p':
       arg->pointer = va_arg(args, void*);
@@ -345,9 +347,9 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
 
   bool parsed_default_type = false;
   char default_type;
-  FmtLengthModifier default_lm;
-  bool default_unsigned_flag;
-  bool default_locale_flag;
+  FmtLengthModifier default_lm = FMT_NONE;
+  bool default_unsigned_flag = false;
+  bool default_locale_flag = false;
 
   char type;
   FmtLengthModifier lm;
@@ -450,16 +452,13 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
               FMT_PRINT_INT(FMT_DECIMAL);
               break;
             case 'b':
-              FMT_PRINT_INT(FMT_BIN_LOWER);
-              break;
-            case 'B':
-              FMT_PRINT_INT(FMT_BIN_UPPER);
+              FMT_PRINT_INT(FMT_BIN);
               break;
             case 'o':
-              FMT_PRINT_INT(FMT_OCT_LOWER);
+              FMT_PRINT_INT(FMT_OCT_FULL);
               break;
             case 'O':
-              FMT_PRINT_INT(FMT_OCT_UPPER);
+              FMT_PRINT_INT(FMT_OCT_ZERO);
               break;
             case 'x':
               FMT_PRINT_INT(FMT_HEX_LOWER);
@@ -480,6 +479,16 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
             case '%':
               written += fmt_print_float(putch, &buffer, &fs, arg.float_,
                                          false, FMT_DOT, '%');
+              break;
+            case 'B':
+              if (fs.alternate_form)
+                written += fmt_print_string(putch, &buffer, &fs,
+                                            arg.bool_ ? "True" : "False",
+                                            arg.bool_ ? 4 : 5);
+              else
+                written += fmt_print_string(putch, &buffer, &fs,
+                                            arg.bool_ ? "true" : "false",
+                                            arg.bool_ ? 4 : 5);
               break;
             case 'p':
               fs.grouping = 0;

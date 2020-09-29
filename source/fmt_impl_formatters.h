@@ -2,18 +2,12 @@
 #define FMT_IMPL_FORMATTERS_H
 
 // Bases (base, digits, prefix, prefix_len)
-#define FMT_DECIMAL     (FmtBase){"0123456789", NULL, 10, 0, 3}
-#define FMT_BIN_LOWER   (FmtBase){"01", "0b", 2, 2, 4}
-#define FMT_BIN_UPPER   (FmtBase){"01", "0B", 2, 2, 4}
-#define FMT_HEX_LOWER   (FmtBase){"0123456789abcdef", "0x", 16, 2, 4}
-#define FMT_HEX_UPPER   (FmtBase){"0123456789ABCDEF", "0X", 16, 2, 4}
-#ifdef FMT_OCTAL_PREFIX_O
-#  define FMT_OCT_LOWER (FmtBase){"01234567", "0o", 8, 2, 4}
-#  define FMT_OCT_UPPER (FmtBase){"01234567", "0o", 8, 2, 4}
-#else
-#  define FMT_OCT_LOWER (FmtBase){"01234567", "0", 8, 1, 4}
-#  define FMT_OCT_UPPER (FmtBase){"01234567", "0", 8, 1, 4}
-#endif
+#define FMT_DECIMAL   (FmtBase){"0123456789", NULL, 10, 0, 3}
+#define FMT_BIN       (FmtBase){"01", "0b", 2, 2, 4}
+#define FMT_HEX_LOWER (FmtBase){"0123456789abcdef", "0x", 16, 2, 4}
+#define FMT_HEX_UPPER (FmtBase){"0123456789ABCDEF", "0X", 16, 2, 4}
+#define FMT_OCT_FULL  (FmtBase){"01234567", "0o", 8, 2, 4}
+#define FMT_OCT_ZERO  (FmtBase){"01234567", "0", 8, 1, 4}
 
 #define FMT_GET_PADDING(l, r, total) \
   { \
@@ -54,28 +48,10 @@ fmt_intlen(uint64_t n, int base)
   return digits;
 }
 
-static uint64_t
-fmt_ipow(int base, int exp)
-{
-  uint64_t result = 1;
-  for (;;)
-    {
-      if (exp & 1)
-        result *= base;
-      exp >>= 1;
-      if (!exp)
-        break;
-      base *= base;
-    }
-
-  return result;
-}
-
 static inline int
 fmt_print_digits(FmtPutch putch, char **buffer, uint64_t number, int len,
                  int base, const char *digits)
 {
-  //uint64_t nn = fmt_ipow(base, len);
   uint64_t nn = (uint64_t)pow(base, len);
   while (nn / base)
     {
@@ -91,7 +67,7 @@ fmt_print_digits_grouped(FmtPutch putch, char **buffer, uint64_t number,
                          int len, int base, const char *digits, char grouping,
                          int group_at)
 {
-  uint64_t nn = fmt_ipow(base, len);
+  uint64_t nn = (uint64_t)pow(base, len);
   int i = group_at - (len % group_at);
   while (nn / base)
     {

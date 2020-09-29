@@ -8,6 +8,10 @@ ifndef PREFIX
 	PREFIX = /usr/local
 endif
 
+ifdef RELEASE
+	CFLAGS += $(OPTFLAGS)
+endif
+
 LIB = libfmt
 
 all: $(LIB).a $(LIB).so test
