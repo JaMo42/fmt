@@ -382,9 +382,11 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
     case 'n':
       arg->out = va_arg(args, int*);
       break;
+#ifdef FMT_SUPPORT_TIME
     case 't':
       arg->time = va_arg(args, struct tm*);
       break;
+#endif
     case '0':
     default:
       return false;
@@ -437,6 +439,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
   // format string for strftime
 #ifdef FMT_SUPPORT_TIME
   char *strftime_fmt = NULL;
+  bool strftime_allocated = false;
 #endif
   FmtFormatSpecifier fs;
 
@@ -493,21 +496,19 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
                 {
                   // strftime format string
                   ++p;
-                  if (strftime_fmt != NULL)
+                  if (strftime_allocated)
                     free(strftime_fmt);
                   if (p[0] == '{' && p[1] == '}')
                     {
-                      const char *s = va_arg(args, const char *);
-                      // We still need to allocate this so we don't try to free
-                      // unallocated memory, if the next time format is not
-                      // parameterized.
-                      strftime_fmt = strdup(s);
+                      strftime_fmt = va_arg(args, char *);
+                      strftime_allocated = false;
                       p += 2;
                     }
                   else
                     {
                       int len = strchr(p, '}') - p;
                       strftime_fmt = strndup(p, len);
+                      strftime_allocated = true;
                       p += len;
                     }
                 }
@@ -618,7 +619,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
         break;
     }
 #ifdef FMT_SUPPORT_TIME
-  if (strftime_fmt != NULL)
+  if (strftime_allocated)
     free(strftime_fmt);
 #endif
   return written;
