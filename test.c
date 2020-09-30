@@ -184,6 +184,19 @@ int main()
   fmt_print("|{}|\n", 23LL);
   puts("|23|");
 
+  // Invalid type
+  SEP;
+  fmt_print("|{y}{d}|\n", 1, 2);
+  puts("|1|");
+  SEP;
+  fmt_print("|{y:{}<{}.{}}{d}|\n", 1, 2);
+  puts("|1|");
+
+  // Some other errors/edge cases
+  SEP;
+  fmt_print("|} }}|\n");
+  puts("| }|");
+
   freelocale(us_loc);
   freelocale(de_loc);
 }

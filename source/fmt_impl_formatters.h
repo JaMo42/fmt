@@ -56,6 +56,7 @@ fmt_print_chars(FmtPutch putch, char **buffer, const char *chars, int len)
   return len;
 }
 
+// Get the length of a number in a given base.
 static inline int
 fmt_intlen(uint64_t n, int base)
 {
@@ -69,6 +70,7 @@ fmt_intlen(uint64_t n, int base)
   return digits;
 }
 
+// Print digits of a number
 static inline int
 fmt_print_digits(FmtPutch putch, char **buffer, uint64_t number, int len,
                  int base, const char *digits)
@@ -83,6 +85,7 @@ fmt_print_digits(FmtPutch putch, char **buffer, uint64_t number, int len,
   return len;
 }
 
+// Print digits of a number, with thousands separator
 static inline int
 fmt_print_digits_grouped(FmtPutch putch, char **buffer, uint64_t number,
                          int len, int base, const char *digits, char grouping,
@@ -103,6 +106,10 @@ fmt_print_digits_grouped(FmtPutch putch, char **buffer, uint64_t number,
 
 #define FMT_FORMATTER FmtPutch putch, char **buffer, FmtFormatSpecifier *fs
 
+/**
+ * @param str string to print
+ * @param len length of @c str
+ */
 static inline int
 fmt_print_string(FMT_FORMATTER, const char *str, int len)
 {
@@ -123,6 +130,11 @@ fmt_print_string(FMT_FORMATTER, const char *str, int len)
   return lpad + len + rpad;
 }
 
+/**
+ * @param number the number to print.
+ * @param sign sign of the number ('\0' for none)
+ * @param base base of the number
+ */
 static inline int
 fmt_print_number(FMT_FORMATTER, uint64_t number, char sign, FmtBase base)
 {
@@ -135,7 +147,10 @@ fmt_print_number(FMT_FORMATTER, uint64_t number, char sign, FmtBase base)
   if (to_print < fs->width)
     FMT_GET_PADDING(lpad, rpad, fs->width - to_print);
 
+  // Only do zero-padding. when aligning to the right, this follows the
+  // behaviour of printf.
   fs->pad_zeros &= fs->align == FMT_RIGHT;
+
   char padchar = fs->pad_zeros ? '0' : fs->fill;
   int written = 0;
   const bool pad_after = fs->pad_zeros || fs->align == FMT_AFTER_SIGN;
@@ -162,6 +177,9 @@ fmt_print_number(FMT_FORMATTER, uint64_t number, char sign, FmtBase base)
   return lpad + written + rpad;
 }
 
+/**
+ * @ref fmt_print_number
+ */
 static inline int
 fmt_print_unsigned(FMT_FORMATTER, uint64_t number, FmtBase base)
 {
@@ -174,6 +192,9 @@ fmt_print_unsigned(FMT_FORMATTER, uint64_t number, FmtBase base)
   return fmt_print_number(putch, buffer, fs, number, sign, base);
 }
 
+/**
+ * @ref fmt_print_number
+ */
 static inline int
 fmt_print_signed(FMT_FORMATTER, int64_t number, FmtBase base)
 {
@@ -191,6 +212,14 @@ fmt_print_signed(FMT_FORMATTER, int64_t number, FmtBase base)
   return fmt_print_number(putch, buffer, fs, number, sign, base);
 }
 
+/**
+ * Print digits of a floating point number.
+ * @param number number to print
+ * @param precision length of the fraction
+ * @param dot symbol to use for the decimal point
+ * @param grouping symbol to use as thousands separator ('\0' for no grouping)
+ * @param alt print in alternate format
+ */
 static inline int
 fmt_print_float_digits(FmtPutch putch, char **buffer, double number, int precision, char dot, char grouping, bool alt)
 {
@@ -226,6 +255,13 @@ fmt_print_float_digits(FmtPutch putch, char **buffer, double number, int precisi
   return written;
 }
 
+/**
+ * @param number number to print
+ * @param upper print "inf" and "nan" in uppercase
+ * @param dot symbol to use for the decimal dot
+ * @param pos The symbol to display after the number ('\0' for none). This is
+ * used for the '%' specifier.
+ */
 static inline int
 fmt_print_float(FMT_FORMATTER, double number, bool upper, char dot, char post)
 {
@@ -276,6 +312,11 @@ fmt_print_float(FMT_FORMATTER, double number, bool upper, char dot, char post)
   return lpad + to_print + rpad;
 }
 
+/**
+ * @param numer number to print
+ * @param upper print "inf" and "nan" in uppercase
+ * @param dot symbol to use for the decimal dot.
+ */
 static inline int
 fmt_print_scientific(FMT_FORMATTER, double number, bool upper, char dot)
 {
@@ -299,6 +340,8 @@ fmt_print_scientific(FMT_FORMATTER, double number, bool upper, char dot)
   int exp = 0;
   char exp_sign = '+';
 
+  // multiply/divide the number until it's "1.xxx", in/de-creasing the
+  // exponent
   if (number < 1.0)
     {
       exp_sign = '-';
@@ -358,6 +401,16 @@ fmt_print_scientific(FMT_FORMATTER, double number, bool upper, char dot)
 }
 
 #ifdef FMT_SUPPORT_TIME
+/**
+ * Print a time object.
+ *
+ * For simplicity and speed @c strftime prints into a static buffer,
+ * this limits the maximum length of the formatted string to 127
+ * (excluding the null-terminator).
+ *
+ * @param fmt format string for the @c strftime function.
+ * @param tm the time object to print.
+ */
 static inline int
 fmt_print_time(FMT_FORMATTER, const char *fmt, struct tm *tm)
 {

@@ -33,6 +33,7 @@
 
 const char *fmt_default_type = "s";
 
+// Alignments
 typedef enum
 {
   FMT_RIGHT = '>',
@@ -43,6 +44,7 @@ typedef enum
   FMT_AFTER_SIGN = '='
 } FmtAlignment;
 
+// Signing modes
 typedef enum
 {
   FMT_NEGATIVE = '-',
@@ -50,6 +52,7 @@ typedef enum
   FMT_SPACE = ' '
 } FmtSign;
 
+// Length modifiers
 typedef enum
 {
   FMT_CHAR,
@@ -63,15 +66,17 @@ typedef enum
   FMT_INTMAX
 } FmtLengthModifier;
 
+// Structure representing a base
 typedef struct
 {
-  const char *digits;
-  const char *prefix;
-  uint8_t base;
-  uint8_t prefix_len;
-  uint8_t group_at;
+  const char *digits;  /**< Digits the base uses (used for upper/lowercase hex) */
+  const char *prefix;  /**< The prefix the base uses (@c NULL for none) */
+  uint8_t base;        /**< The base */
+  uint8_t prefix_len;  /**< The length of the prefix */
+  uint8_t group_at;    /**< The thousands separator gets placed every @c group_at digits */
 } FmtBase;
 
+// Format specifier information
 typedef struct
 {
   char fill;
@@ -85,6 +90,7 @@ typedef struct
   bool has_precision;
 } FmtFormatSpecifier;
 
+// Union containing all the possible argument types.
 typedef union
 {
   int64_t int_;
@@ -98,6 +104,9 @@ typedef union
   struct tm *time;
 } FmtArg;
 
+/**
+ * Resets a format specifier to its default values.
+ */
 static void
 fmt_reset_format_specifier(FmtFormatSpecifier *fs)
 {
@@ -115,6 +124,13 @@ fmt_reset_format_specifier(FmtFormatSpecifier *fs)
 #include "fmt_impl_formatters.h"
 
 #define FMT_IS_PARAM (fmt[0] == '{' && fmt[1] == '}')
+/**
+ * Parses a format specifier
+ * @param fmt format string starting after the ':'
+ * @param fs format specifier recieving the information.
+ * @param args arguments passed to the function, used to fill in parameterized
+ * options.
+ */
 static const char *
 fmt_parse_format_specifier(const char *fmt, FmtFormatSpecifier *fs, va_list args)
 {
@@ -123,31 +139,38 @@ fmt_parse_format_specifier(const char *fmt, FmtFormatSpecifier *fs, va_list args
     {
       if (*p == '}')
         // Accoding to Python:
-        // Brackets can not be escape inside a format specifier.
+        // Brackets can not be escaped inside a format specifier.
         // Instead they should be given as parameters.
         return p;
+      // Alignment without fill character
       else if (strchr("<>^=", *p))
         {
           fs->align = (FmtAlignment)*p;
         }
+      // Alignment with fill charater
       else if (strchr("<>^=", p[1]))
         {
           fs->fill = p[0];
           fs->align = (FmtAlignment)p[1];
           ++p;
         }
+      // Alignment with parameterized fill character
       else if (strchr("<>^=", p[2]) && p[0] == '{' && p[1] == '}')
         {
           fs->fill = (char)va_arg(args, int);
           fs->align = (FmtAlignment)p[2];
           p += 2;
         }
+      // Sign
       else if (strchr("-+ ", *p))
         fs->sign = (FmtSign)*p;
+      // Alternate form
       else if (*p == '#')
         fs->alternate_form = true;
+      // Zero padding
       else if (*p == '0' && !fs->pad_zeros)
         fs->pad_zeros = true;
+      // Width
       else if (isdigit(*p))
         {
           while (isdigit(*p))
@@ -163,8 +186,10 @@ fmt_parse_format_specifier(const char *fmt, FmtFormatSpecifier *fs, va_list args
           fs->width = va_arg(args, int);
           ++p;
         }
+      // Grouping
       else if (*p == '_' || *p == ',')
         fs->grouping = *p;
+      // Precision
       else if (*p == '.')
         {
           ++p;
@@ -192,6 +217,9 @@ fmt_parse_format_specifier(const char *fmt, FmtFormatSpecifier *fs, va_list args
 }
 #undef FMT_IS_PARAM
 
+/**
+ * Parses a type string.
+ */
 static inline const char *
 fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *type, bool *locale_flag)
 {
@@ -252,8 +280,9 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
       *type = *p;
       ++p;
     }
-  else
+  else if (*p == '}' || *p == ':')
     {
+      // End of the type string.
       // Check if we mistook a flag for the type
       if (*unsigned_flag)
         *type = 'd';
@@ -269,6 +298,11 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
           *type = 'n';
         }
 #endif
+    }
+  else
+    {
+      // There was a character that, that is not a known type specifier.
+      *type = 0;
     }
   return p;
 }
@@ -286,8 +320,11 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
     case FMT_INTMAX: n = (long long T)va_arg(args, i); break;\
     case FMT_PTRDIFF: n = (long long T)va_arg(args, p); break; \
     }
+// Get a length modified signed integer
 #define FMT_GET_SIGNED(n, lm) FMT_GET_INT(n, lm, signed, intmax_t, intmax_t, ptrdiff_t)
+// Get a length modified unsigned interger
 #define FMT_GET_UNSIGNED(n, lm) FMT_GET_INT(n, lm, unsigned, size_t, uintmax_t, size_t)
+// Get a length modified float
 #define FMT_GET_FLOAT(n, lm) \
   switch (lm) \
     { \
@@ -297,6 +334,12 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
     case FMT_LONG_DOUBLE: n = (double)va_arg(args, long double); break; \
     }
 
+/**
+ * Get the next variadic argument.
+ * @param type type specifier
+ * @param lm length modifier
+ * @param unsigned_flag integer is unsigned
+ */
 static inline bool
 fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va_list args)
 {
@@ -342,12 +385,14 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
     case 't':
       arg->time = va_arg(args, struct tm*);
       break;
+    case '0':
     default:
       return false;
     }
   return true;
 }
 
+// Prints the integer argument, depending on the unsigned flag
 #define FMT_PRINT_INT(b) \
   if (unsigned_flag) \
     written += fmt_print_unsigned(putch, &buffer, &fs, arg.uint, b); \
@@ -366,27 +411,35 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
   int written = 0;
   const char *p;
 
+  // Default type information.
+  // This gets only parsed once, when needed, indicated by the
+  // "parsed_default_type" flag.
   bool parsed_default_type = false;
   char default_type;
   FmtLengthModifier default_lm = FMT_NONE;
   bool default_unsigned_flag = false;
   bool default_locale_flag = false;
 
+  // Type information
   char type;
   FmtLengthModifier lm;
   bool unsigned_flag;
   bool locale_flag;
 
+  // Current locale.
 #ifdef FMT_SUPPORT_LOCALE
   struct lconv *loc = NULL;
 #endif
 
+  // Current argument
   FmtArg arg;
 
+  // format string for strftime
 #ifdef FMT_SUPPORT_TIME
   char *strftime_fmt = NULL;
 #endif
   FmtFormatSpecifier fs;
+
   for (p = fmt; *p; ++p)
     {
       fmt_reset_format_specifier(&fs);
@@ -407,7 +460,9 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
 
           if (*p == '}' || *p == ':')
             {
+              // No type given, use default
               if (!parsed_default_type)
+                // First time, parse default type string.
                 fmt_parse_type(fmt_default_type, &default_lm,
                                &default_unsigned_flag, &default_type,
                                &default_locale_flag);
@@ -419,14 +474,24 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
           else
             p = fmt_parse_type(p, &lm, &unsigned_flag, &type, &locale_flag);
 
+          // If the type specifier was invalid, skip to the end of the format
+          // specifier.
           if (!fmt_get_arg(&arg, type, lm, unsigned_flag, args))
-            continue;
+            {
+              while (*p != '}')
+                {
+                  ++p;
+                  if (*p == '{')
+                    p += 2;
+                }
+            }
 
           if (*p == ':')
             {
 #ifdef FMT_SUPPORT_TIME
               if (type == 't')
                 {
+                  // strftime format string
                   ++p;
                   if (strftime_fmt != NULL)
                     free(strftime_fmt);
@@ -434,7 +499,8 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
                     {
                       const char *s = va_arg(args, const char *);
                       // We still need to allocate this so we don't try to free
-                      // unallocated memory
+                      // unallocated memory, if the next time format is not
+                      // parameterized.
                       strftime_fmt = strdup(s);
                       p += 2;
                     }
@@ -450,14 +516,17 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
                 p = fmt_parse_format_specifier(p + 1, &fs, args);
             }
 #ifdef FMT_SUPPORT_LOCALE
+          // Get grouping character.
           if (locale_flag)
             {
               if (loc == NULL)
+                // First time, get the current locale.
                 loc = localeconv();
               if (fs.grouping)
                 fs.grouping = *loc->thousands_sep;
             }
 #endif
+          // Print the argument
           switch (type)
             {
             case 's':
@@ -529,6 +598,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
               break;
             }
         }
+      // Print ascaped closing bracket.
       else if (*p == '}')
         {
           if (p[1] && p[1] == '}')
@@ -538,6 +608,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
               ++p;
             }
         }
+      // Print normal character
       else
         {
           putch(&buffer, *p);
