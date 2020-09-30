@@ -423,7 +423,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
   bool default_locale_flag = false;
 
   // Type information
-  char type;
+  char type = 0;
   FmtLengthModifier lm;
   bool unsigned_flag;
   bool locale_flag;
