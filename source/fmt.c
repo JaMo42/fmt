@@ -24,10 +24,18 @@
 #include <stdlib.h>
 #include "fmt/fmt.h"
 
+typedef struct
+{
+  char *data;
+  int cap;
+  int len;
+} FmtString;
+
 typedef union
 {
   char *s;
   FILE *f;
+  FmtString *str;
 } FmtPunningDevice;
 
 static void
@@ -43,18 +51,6 @@ fmt_buffer_putch(char **bufptr, char ch)
   *(*bufptr)++ = ch;
 }
 
-/* Old implementation, not threadsafe. Kept here for some reason
-
-static FILE *fmt_fprint_stream;
-
-static void
-fmt_stream_putch(char **bufptr, char ch)
-{
-  (void)bufptr;
-  fputc(ch, fmt_fprint_stream);
-}
-*/
-
 static void
 fmt_stream_putch(char **streamptr, char ch)
 {
@@ -62,21 +58,17 @@ fmt_stream_putch(char **streamptr, char ch)
   fputc(ch, pd.f);
 }
 
-static int fmt_format_cap;
-static int fmt_format_len;
-static char *fmt_format_buf;
-
 static void
-fmt_format_putch(char **bufptr, char ch)
+fmt_format_putch(char **strptr, char ch)
 {
-  if (fmt_format_len == fmt_format_cap)
+  FmtPunningDevice conv = { .s = *strptr };
+  FmtString *str = conv.str;
+  if (str->len == str->cap)
     {
-      fmt_format_cap <<= 1;
-      fmt_format_buf = realloc(fmt_format_buf, fmt_format_cap);
-      *bufptr = fmt_format_buf + fmt_format_len;
+      str->cap <<= 1;
+      str->data = realloc(str->data, str->cap);
     }
-  *(*bufptr)++ = ch;
-  ++fmt_format_len;
+  str->data[str->len++] = ch;
 }
 
 static void
@@ -149,7 +141,6 @@ fmt_snprint(char *s, int n, const char *fmt, ...)
 int
 fmt_vfprint(FILE *stream, const char *fmt, va_list args)
 {
-  //fmt_fprint_stream = fp;
   FmtPunningDevice pd = { .f = stream };
   return fmt_format_impl(fmt_stream_putch, pd.s, INT_MAX, fmt, args);
 }
@@ -157,7 +148,6 @@ fmt_vfprint(FILE *stream, const char *fmt, va_list args)
 int
 fmt_fprint(FILE *stream, const char *fmt, ...)
 {
-  //fmt_fprint_stream = fp;
   FmtPunningDevice pd = { .f = stream };
   FMT_VWRAPPER(fmt_stream_putch, pd.s, INT_MAX, fmt, args);
   return r;
@@ -166,7 +156,6 @@ fmt_fprint(FILE *stream, const char *fmt, ...)
 int
 fmt_vfnprint(FILE *stream, int n, const char *fmt, va_list args)
 {
-  //fmt_fprint_stream = fp;
   FmtPunningDevice pd = { .f = stream };
   return fmt_format_impl(fmt_stream_putch, pd.s, n, fmt, args);
 }
@@ -174,49 +163,50 @@ fmt_vfnprint(FILE *stream, int n, const char *fmt, va_list args)
 int
 fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
 {
-  //fmt_fprint_stream = fp;
   FmtPunningDevice pd = { .f = stream };
   FMT_VWRAPPER(fmt_stream_putch, pd.s, n, fmt, args);
   return r;
 }
 
 #define FMT_FORMAT_INIT(c)\
-  fmt_format_buf = malloc(c); \
-  fmt_format_cap = c; \
-  fmt_format_len = 0
+  FmtString s; \
+  s.data = malloc(c); \
+  s.cap = c; \
+  s.len = 0; \
+  FmtPunningDevice conv = { .str = &s }
 
 char *
 fmt_vformat(const char *fmt, va_list args)
 {
   FMT_FORMAT_INIT(16);
-  fmt_format_impl(fmt_format_putch, fmt_format_buf, INT_MAX, fmt, args);
-  return fmt_format_buf;
+  fmt_format_impl(fmt_format_putch, conv.s, INT_MAX, fmt, args);
+  return s.data;
 }
 
 char *
 fmt_format(const char *fmt, ...)
 {
   FMT_FORMAT_INIT(16);
-  FMT_VWRAPPER(fmt_format_putch, fmt_format_buf, INT_MAX, fmt, args);
+  FMT_VWRAPPER(fmt_format_putch, conv.s, INT_MAX, fmt, args);
   (void)r;
-  return fmt_format_buf;
+  return s.data;
 }
 
 char *
 fmt_vnformat(int n, const char *fmt, va_list args)
 {
   FMT_FORMAT_INIT(n);
-  fmt_format_impl(fmt_format_putch, fmt_format_buf, n, fmt, args);
-  return fmt_format_buf;
+  fmt_format_impl(fmt_format_putch, conv.s, n, fmt, args);
+  return s.data;
 }
 
 char *
 fmt_nformat(int n, const char *fmt, ...)
 {
   FMT_FORMAT_INIT(n);
-  FMT_VWRAPPER(fmt_format_putch, fmt_format_buf, n, fmt, args);
+  FMT_VWRAPPER(fmt_format_putch, conv.s, n, fmt, args);
   (void)r;
-  return fmt_format_buf;
+  return s.data;
 }
 
 int
