@@ -417,7 +417,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
   // This gets only parsed once, when needed, indicated by the
   // "parsed_default_type" flag.
   bool parsed_default_type = false;
-  char default_type;
+  char default_type = 's';
   FmtLengthModifier default_lm = FMT_NONE;
   bool default_unsigned_flag = false;
   bool default_locale_flag = false;
