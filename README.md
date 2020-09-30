@@ -228,7 +228,7 @@ const char * fmt_default_type = "s";
 Change this value to your desired default type.
 This gets used for the empty replacement field `{}`.
 
-```
+```cpp
 int fmt_format_initial_size = 16;
 ```
 
