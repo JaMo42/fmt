@@ -30,6 +30,9 @@ typedef void(*FmtPutch)(char **, char);
 // The type to use when no type is given and it is no implied (defaults to "s").
 extern const char * fmt_default_type;
 
+// The initial size of the buffer allocated by the fmt_format functions.
+extern int fmt_format_initial_size;
+
 int
 fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_list args);
 

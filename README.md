@@ -175,6 +175,8 @@ char * fmt_vnformat(int n, const char *fmt, va_list);
 ```
 
 Print formatted text into a newly allocated buffer and return it.
+The buffer uses exponential growth, doubling its size when growing.
+`fmt_format` and `fmt_vformat` initialize the buffer to `fmt_format_initial_size` characters, `fmt_nformat` and `fmt_vnformat` to `n`.
 
 ```cpp
 int fmt_formatted_length(const char *fmt, ...);
@@ -217,7 +219,7 @@ The pointer is not changed by `fmt_format_impl` and has to be advanced by the `p
 
 See `custom_putch_example.c` for an example on this.
 
-## Default type
+## Global variables
 
 ```cpp
 const char * fmt_default_type = "s";
@@ -225,6 +227,12 @@ const char * fmt_default_type = "s";
 
 Change this value to your desired default type.
 This gets used for the empty replacement field `{}`.
+
+```
+int fmt_format_initial_size = 16;
+```
+
+The initial size of the buffer allocated by the `fmt_format` functions.
 
 ## Building
 

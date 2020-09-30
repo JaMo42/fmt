@@ -24,6 +24,8 @@
 #include <stdlib.h>
 #include "fmt/fmt.h"
 
+int fmt_format_initial_size = 16;
+
 typedef struct
 {
   char *data;
@@ -178,7 +180,7 @@ fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
 char *
 fmt_vformat(const char *fmt, va_list args)
 {
-  FMT_FORMAT_INIT(16);
+  FMT_FORMAT_INIT(fmt_format_initial_size);
   fmt_format_impl(fmt_format_putch, conv.s, INT_MAX, fmt, args);
   return s.data;
 }
@@ -186,7 +188,7 @@ fmt_vformat(const char *fmt, va_list args)
 char *
 fmt_format(const char *fmt, ...)
 {
-  FMT_FORMAT_INIT(16);
+  FMT_FORMAT_INIT(fmt_format_initial_size);
   FMT_VWRAPPER(fmt_format_putch, conv.s, INT_MAX, fmt, args);
   (void)r;
   return s.data;
