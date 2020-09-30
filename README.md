@@ -185,6 +185,21 @@ int fmt_vformatted_length(const char *fmt, va_list);
 
 Do not print anything, return the required length of the formatted text.
 
+## Global variables
+
+```cpp
+const char * fmt_default_type = "s";
+```
+
+Change this value to your desired default type.
+This gets used for the empty replacement field `{}`.
+
+```cpp
+int fmt_format_initial_size = 16;
+```
+
+The initial size of the buffer allocated by the `fmt_format` functions.
+
 ### `fmt_format_impl` - The backbone of the library
 
 All of the above functions are wrappers around the `fmt_format_impl` function:
@@ -219,21 +234,6 @@ The pointer is not changed by `fmt_format_impl` and has to be advanced by the `p
 
 See `custom_putch_example.c` for an example on this.
 
-## Global variables
-
-```cpp
-const char * fmt_default_type = "s";
-```
-
-Change this value to your desired default type.
-This gets used for the empty replacement field `{}`.
-
-```cpp
-int fmt_format_initial_size = 16;
-```
-
-The initial size of the buffer allocated by the `fmt_format` functions.
-
 ## Building
 
 Compile with `-DFMT_SUPPORT_TIME` to enable the `t` type specifier.
@@ -254,7 +254,7 @@ Make options:
 
 `pandoc` to use `make doc`, compiling the README to a PDF.
 
-When using the static library, you'll also need to link `-lm`.
+When using the static library, you also need to link `-lm`.
 
 ## Acknowledgments
 
