@@ -50,7 +50,7 @@ If you need literal curly braces, they can be escaped like this: `{{` and `}}`.
 
   - `p` Pointer address
 
-  - `t` Date-time
+  - `t` Time structure
 
   - `n` Nothing is printed, the number of character written so far is stored in the argument.
 
@@ -74,7 +74,7 @@ Do note that the type string is positional, this is important as `n` and `t` are
 
 The type may also be omitted, in this case:
 
-- if the unsigned flag is given it defaults to 'd'
+- if the unsigned flag is given it defaults to `d`
 
 - otherwise it defaults to the `fmt_default_type` string
 
@@ -133,7 +133,7 @@ It is not possible to directly use `{` or `}` as fill character, they have to be
 
 ### Time format specifier
 
-If formatting a date-time object, the format specifier is replaced by a `strftime` format string.
+If formatting a time structure, the format specifier is replaced by a `strftime` format string.
 This string may also be given as a parameter (type `char *`).
 
 ## Functions

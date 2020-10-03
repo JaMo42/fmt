@@ -12,7 +12,6 @@ typedef struct List
 
 #if 1
 // Using a global variable.
-// not threadsafe.
 
 static List *current_list;
 
@@ -35,8 +34,7 @@ int list_print(List *l, const char *fmt, ...)
   return len;
 }
 #else
-// Using type punning
-// less clean, but threadsafe
+// Using type punning.
 
 typedef union
 {
