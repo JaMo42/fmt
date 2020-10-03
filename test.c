@@ -149,14 +149,14 @@ int main()
 
   // Format
   SEP;
-  char *s = fmt_format("|{} {c} \"{f:{}^,+{}.{}}\"|\n", "msg", '=', '*', 20, 3, 3.1415926);
+  char *s = fmt_format("|{} {c} \"{f:{}^,+{}.{}}\"|\n", "msg", '=', 3.1415926, '*', 20, 3);
   fmt_print(s);
   puts("|msg = \"*******+3.141*******\"|");
   free(s);
 
   // Formatted length
   SEP;
-  fmt_print("{d}\n", fmt_formatted_length("{f:+,.{}}", 3, 3.1415926));
+  fmt_print("{d}\n", fmt_formatted_length("{f:+,.{}}", 3.1415926, 3));
   puts("6");
 
   // Implicit types
