@@ -275,7 +275,7 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
     }
 #endif
   // Type
-  if (memchr("scdbBoOxXfFeE%ptn", *p, 17))
+  if (memchr("scdbBoOxXfFeE%ptDn", *p, 17))
     {
       *type = *p;
       ++p;
@@ -377,16 +377,17 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
       arg->bool_ = (bool)va_arg(args, int);
       break;
     case 'p':
+    case 'D':
       arg->pointer = va_arg(args, void*);
-      break;
-    case 'n':
-      arg->out = va_arg(args, int*);
       break;
 #ifdef FMT_SUPPORT_TIME
     case 't':
       arg->time = va_arg(args, struct tm*);
       break;
 #endif
+    case 'n':
+      arg->out = va_arg(args, int*);
+      break;
     case '0':
     default:
       return false;
@@ -586,6 +587,10 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
               fs.alternate_form = true;
               written += fmt_print_number(putch, &buffer, &fs, (size_t)arg.pointer,
                                           0, FMT_HEX_LOWER);
+              break;
+            case 'D':
+              if (fs.has_precision)
+                written += fmt_print_base64(putch, &buffer, &fs, arg.pointer);
               break;
 #ifdef FMT_SUPPORT_TIME
             case 't':

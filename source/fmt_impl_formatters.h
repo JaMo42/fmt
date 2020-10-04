@@ -420,4 +420,53 @@ fmt_print_time(FMT_FORMATTER, const char *fmt, struct tm *tm)
 }
 #endif
 
+static const uint8_t fmt_base64_table[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/**
+ * Print binary data in base64.
+ *
+ * Number of bytes gets passed through "fs->precision".
+ *
+ * @param data pointer to data.
+ */
+static inline int
+fmt_print_base64(FMT_FORMATTER, const uint8_t *data)
+{
+  const uint8_t *end = data + fs->precision;
+  const uint8_t *pos = data;
+  int line_length = 0;
+  int written = fs->precision * 4 / 3 + 4;
+
+  while (end - pos >= 3)
+    {
+      putch(buffer, fmt_base64_table[pos[0] >> 2]);
+      putch(buffer, fmt_base64_table[((pos[0] & 0x3) << 4) | (pos[1] >> 4)]);
+      putch(buffer, fmt_base64_table[((pos[1] & 0xf) << 2) | (pos[2] >> 6)]);
+      putch(buffer, fmt_base64_table[pos[2] & 0x3f]);
+      pos += 3;
+      line_length += 4;
+      if (fs->alternate_form && line_length == 76)
+        {
+          putch(buffer, '\n');
+          ++written;
+          line_length = 0;
+        }
+    }
+  if (end - pos == 2)
+    {
+      putch(buffer, fmt_base64_table[pos[0] >> 2]);
+      putch(buffer, fmt_base64_table[((pos[0] & 0x3) << 4) | (pos[1] >> 4)]);
+      putch(buffer, fmt_base64_table[(pos[1] & 0xf) << 2]);
+      putch(buffer, '=');
+    }
+  else if (end - pos == 1)
+    {
+      putch(buffer, fmt_base64_table[pos[0] >> 2]);
+      putch(buffer, fmt_base64_table[(pos[0] & 0x3) << 4]);
+      putch(buffer, '=');
+      putch(buffer, '=');
+    }
+  return written;
+}
+
 #endif /* !FMT_IMPL_FORMATTERS_H */

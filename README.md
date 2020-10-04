@@ -52,23 +52,26 @@ If you need literal curly braces, they can be escaped like this: `{{` and `}}`.
 
   - `t` Time structure
 
+  - `D` Binary data in Base64
+
   - `n` Nothing is printed, the number of character written so far is stored in the argument.
 
 Expected types:
 
-Rows: Length modifier, Columns: Type specifier
+Rows: Type specifier, Columns: Length modifier
 
-|        | d b o O x X   | ud ub uo uO ux uX    | f e %         | c      | s        | B       | p        | n       | t             |
-|--------|---------------|----------------------|---------------|--------|----------|---------|----------|---------|---------------|
-| (none) | `int`         | `unsigned`           | `double`      | `char` | `char *` | `_Bool` | `void *` | `int *` | `struct tm *` |
-| hh     | `signed char` | `unsigned char`      |               |        |          |         |          |         |               |
-| h      | `short`       | `unsigned short`     |               |        |          |         |          |         |               |
-| l      | `long`        | `unsigned long`      |               |        |          |         |          |         |               |
-| ll     | `long long`   | `unsigned long long` |               |        |          |         |          |         |               |
-| j      | `intmax_t`    | `uintmax_t`          |               |        |          |         |          |         |               |
-| z      | `intmax_t`    | `size_t`             |               |        |          |         |          |         |               |
-| t      | `ptrdiff_t`   | `size_t`             |               |        |          |         |          |         |               |
-| L      |               |                      | `long double` |        |          |         |          |         |               |
+| | (none) | hh | h | l | ll | j | z | t | L |
+|---|---|---|---|---|---|---|---|---|---|
+| d b o O x X | `int` | `signed char` | `short` | `long` | `long long` | `intmax_t` | `intmax_t` | `ptrdiff_t` |
+| ud ub uo uO ux uX| `unsigned` | `unsigned char` | `unsigned short` | `unsigned long` | `unsigned long long` | `uintmax_t` | `size_t` | `size_t` |
+| f e % | | | | | | | | | `long double` |
+| c | `char` |
+| s | `char *` |
+| B | `_Bool` |
+| p | `void *` |
+| n | `int *` |
+| t | `struct tm *` |
+| D | `void *` |
 
 Do note that the type string is positional, this is important as `n` and `t` are both types and flags and must be last element of the type string in order to be considered a type.
 
@@ -123,6 +126,8 @@ For integers using binary, octal, or hexadecimal representation the separator is
   - `f` Specifies the length of the fraction.
 
   - `s` Specifies the maximum length of the string.
+
+  - `D` Specifies the number of bytes (must be provided).
 
   May also be given as a parameter (type `int`).
 
