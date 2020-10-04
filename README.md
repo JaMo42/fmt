@@ -113,6 +113,8 @@ The type may also be omitted, in this case:
 
   - For booleans, print the first character in uppercase
 
+  - For Base64, print a newline every 76 characters
+
 - `0` Pad zeros, for integers and floats sets align to `=` and fill to `0`
 
 - `width` The width of the field. May also be given as a parameter (type `int`).
