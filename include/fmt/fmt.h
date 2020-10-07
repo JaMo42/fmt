@@ -25,6 +25,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void(*FmtPutch)(char **, char);
 
 // The type to use when no type is given and it is no implied (defaults to "s").
@@ -99,5 +103,9 @@ fmt_vformatted_length(const char *fmt, va_list args);
 
 int
 fmt_formatted_length(const char *fmt, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !FMT_H */
