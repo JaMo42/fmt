@@ -263,6 +263,8 @@ Make options:
 
 When using the static library, you also need to link `-lm`.
 
+[smallunit](https://github.com/JaMo42/smallunit) to build the tests.
+
 ## Acknowledgments
 
 The core design with the `fmt_format_impl` and `putch` functions was inspired by [SerenityOS](https://github.com/SerenityOS/serenity)' [printf implementation](https://github.com/SerenityOS/serenity/blob/master/AK/PrintfImplementation.h).
