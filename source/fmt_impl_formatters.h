@@ -266,9 +266,9 @@ static inline int
 fmt_print_float(FMT_FORMATTER, double number, bool upper, char dot, char post)
 {
   if (isnan(number))
-    return fmt_print_string(putch, buffer, fs, upper ? "NAN" : "nan", 3);
+    return fmt_print_string(putch, buffer, fs, (upper ? "NAN" : "nan"), 3);
   if (isinf(number))
-    return fmt_print_string(putch, buffer, fs, upper ? "INF" : "inf", 3);
+    return fmt_print_string(putch, buffer, fs, (upper ? "INF" : "inf"), 3);
 
   char sign = 0;
   if (number < 0)
@@ -306,6 +306,8 @@ fmt_print_float(FMT_FORMATTER, double number, bool upper, char dot, char post)
     FMT_PAD(lpad, padchar);
 
   fmt_print_float_digits(putch, buffer, number, fs->precision, dot, fs->grouping, fs->alternate_form);
+  if (post)
+    putch(buffer, post);
 
   FMT_PAD(rpad, fs->fill);
 
@@ -384,7 +386,7 @@ fmt_print_scientific(FMT_FORMATTER, double number, bool upper, char dot)
   if (after_sign)
     FMT_PAD(lpad, padchar);
 
-  fmt_print_float_digits(putch, buffer, fraction, fs->precision, dot, 0, false);
+  fmt_print_float_digits(putch, buffer, fraction, fs->precision, dot, 0, fs->alternate_form);
   putch(buffer, upper ? 'E' : 'e');
   putch(buffer, exp_sign);
   if (exp_len == 1)

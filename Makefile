@@ -1,13 +1,16 @@
 CC = gcc
-FEATURES :=
-OPTFLAGS = -O3 -march=native -mtune=native
 CFLAGS = -Wall -Wextra -Iinclude
+OPTFLAGS = -O3 -march=native -mtune=native
+DBGFLAGS = -O0 -g
 LDFLAGS = -lm
 
+FEATURES :=
 PREFIX ?= /usr/local
 
 ifeq ($(RELEASE), 1)
 	CFLAGS += $(OPTFLAGS)
+else
+	CFLAGS += $(DBGFLAGS)
 endif
 
 ifneq ($(NO_TIME), 1)
@@ -37,14 +40,17 @@ $(LIB).so: build/fmt.o build/fmt_impl.o
 $(LIB).a: build/fmt.o build/fmt_impl.o
 	ar rcs $@ $^
 
-test: build/test.o $(LIB).a
+test: build/test.o ./$(LIB).a
 	$(CC) $(LDFLAGS) -o $@ $^
 
 example: custom_putch_example.c $(LIB).a
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-clean:
-	rm -f build/*.o *.vgcore test example $(LIB).a $(LIB).so
+vgclean:
+	rm -f vgcore.*
+
+clean: vgclean
+	rm -f build/*.o test example $(LIB).a $(LIB).so
 
 install: $(LIB).a $(LIB).so
 	@mkdir -p $(PREFIX)/include/fmt

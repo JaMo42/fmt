@@ -292,7 +292,7 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
           *type = 't';
         }
 #ifdef FMT_SUPPORT_LOCALE
-      else if (*locale_flag)
+      else if (*locale_flag && !*unsigned_flag)
         {
           *locale_flag = false;
           *type = 'n';
@@ -561,15 +561,15 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
             case 'f':
             case 'F':
               written += fmt_print_float(putch, &buffer, &fs, arg.float_,
-                                         *p == 'F', FMT_DOT, 0);
+                                         type == 'F', FMT_DOT, 0);
               break;
             case 'e':
             case 'E':
               written += fmt_print_scientific(putch, &buffer, &fs, arg.float_,
-                                              *p == 'E', FMT_DOT);
+                                              type == 'E', FMT_DOT);
               break;
             case '%':
-              written += fmt_print_float(putch, &buffer, &fs, arg.float_,
+              written += fmt_print_float(putch, &buffer, &fs, arg.float_ * 100.0,
                                          false, FMT_DOT, '%');
               break;
             case 'B':
@@ -599,7 +599,6 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
               break;
 #endif
             case 'n':
-              arg.out = va_arg(args, int*);
               *arg.out = written;
               break;
             }
