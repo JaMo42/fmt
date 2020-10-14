@@ -83,7 +83,7 @@ The type may also be omitted, in this case:
 
 ### Format specifier
 
-`[[fill]align]][sign][#][0][width][grouping][.precision]` (non-positional)
+`[[fill]align][sign][#][0][width][grouping][.precision]` (non-positional)
 
 - `fill` The character to use for padding. May also be given as a parameter (type `char`).
 
