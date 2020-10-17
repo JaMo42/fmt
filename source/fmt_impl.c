@@ -307,33 +307,6 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
   return p;
 }
 
-#define FMT_GET_INT(n, lm, T, s, i, p) \
-  switch (lm) \
-    { \
-    case FMT_CHAR: n = (long long T)va_arg(args, int T); break; \
-    case FMT_SHORT: n = (long long T)va_arg(args, int T); break; \
-    default: \
-    case FMT_NONE: n = (long long T)va_arg(args, int T); break; \
-    case FMT_LONG: n = (long long T)va_arg(args, long T); break; \
-    case FMT_LONG_LONG: n = (long long T)va_arg(args, long long T); break; \
-    case FMT_SIZE: n = (long long T)va_arg(args, s); break; \
-    case FMT_INTMAX: n = (long long T)va_arg(args, i); break;\
-    case FMT_PTRDIFF: n = (long long T)va_arg(args, p); break; \
-    }
-// Get a length modified signed integer
-#define FMT_GET_SIGNED(n, lm) FMT_GET_INT(n, lm, signed, intmax_t, intmax_t, ptrdiff_t)
-// Get a length modified unsigned interger
-#define FMT_GET_UNSIGNED(n, lm) FMT_GET_INT(n, lm, unsigned, size_t, uintmax_t, size_t)
-// Get a length modified float
-#define FMT_GET_FLOAT(n, lm) \
-  switch (lm) \
-    { \
-    default: \
-    case FMT_NONE: \
-    case FMT_LONG: n = va_arg(args, double); break; \
-    case FMT_LONG_DOUBLE: n = (double)va_arg(args, long double); break; \
-    }
-
 /**
  * Get the next variadic argument.
  * @param type type specifier
@@ -359,11 +332,27 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
     case 'X':
       if (unsigned_flag)
         {
-          FMT_GET_UNSIGNED(arg->uint, lm);
+          switch (lm)
+            {
+            case FMT_LONG:      arg->uint = (uint64_t)va_arg(args, unsigned long); break;
+            case FMT_LONG_LONG: arg->uint = (uint64_t)va_arg(args, unsigned long long); break;
+            case FMT_SIZE:      arg->uint = (uint64_t)va_arg(args, size_t); break;
+            case FMT_INTMAX:    arg->uint = (uint64_t)va_arg(args, uintmax_t); break;
+            case FMT_PTRDIFF:   arg->uint = (uint64_t)va_arg(args, size_t); break;
+            default:            arg->uint = (uint64_t)va_arg(args, unsigned); break;
+            }
         }
       else
         {
-          FMT_GET_SIGNED(arg->int_, lm);
+          switch (lm)
+            {
+            case FMT_LONG:      arg->int_ = (int64_t)va_arg(args, long); break;
+            case FMT_LONG_LONG: arg->int_ = (int64_t)va_arg(args, long long); break;
+            case FMT_SIZE:      arg->int_ = (int64_t)va_arg(args, intmax_t); break;
+            case FMT_INTMAX:    arg->int_ = (int64_t)va_arg(args, intmax_t); break;
+            case FMT_PTRDIFF:   arg->int_ = (int64_t)va_arg(args, ptrdiff_t); break;
+            default:            arg->int_ = (int64_t)va_arg(args, int); break;
+            }
         }
       break;
     case 'f':
@@ -371,7 +360,10 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
     case 'e':
     case 'E':
     case '%':
-      FMT_GET_FLOAT(arg->float_, lm);
+      if (lm == FMT_LONG_DOUBLE)
+        arg->float_ = (double)va_arg(args, long double);
+      else
+        arg->float_ = va_arg(args, double);
       break;
     case 'B':
       arg->bool_ = (bool)va_arg(args, int);
