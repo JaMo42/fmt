@@ -259,6 +259,11 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
       *lm = FMT_INTMAX;
       ++p;
     }
+  else if (*p == 'L')
+    {
+      *lm = FMT_LONG_DOUBLE;
+      ++p;
+    }
   // Unsigned flag
   if (*p == 'u')
     {
