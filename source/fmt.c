@@ -38,7 +38,7 @@ typedef union
   char *s;
   FILE *f;
   FmtString *str;
-} FmtPunningDevice;
+} FmtConv;
 
 static void
 fmt_stdout_putch(char **bufptr, char ch)
@@ -56,14 +56,14 @@ fmt_buffer_putch(char **bufptr, char ch)
 static void
 fmt_stream_putch(char **streamptr, char ch)
 {
-  FmtPunningDevice pd = { .s = *streamptr };
+  FmtConv pd = { .s = *streamptr };
   fputc(ch, pd.f);
 }
 
 static void
 fmt_format_putch(char **strptr, char ch)
 {
-  FmtPunningDevice conv = { .s = *strptr };
+  FmtConv conv = { .s = *strptr };
   FmtString *str = conv.str;
   if (str->len == str->cap)
     {
@@ -143,14 +143,14 @@ fmt_snprint(char *s, int n, const char *fmt, ...)
 int
 fmt_vfprint(FILE *stream, const char *fmt, va_list args)
 {
-  FmtPunningDevice pd = { .f = stream };
+  FmtConv pd = { .f = stream };
   return fmt_format_impl(fmt_stream_putch, pd.s, INT_MAX, fmt, args);
 }
 
 int
 fmt_fprint(FILE *stream, const char *fmt, ...)
 {
-  FmtPunningDevice pd = { .f = stream };
+  FmtConv pd = { .f = stream };
   FMT_VWRAPPER(fmt_stream_putch, pd.s, INT_MAX, fmt, args);
   return r;
 }
@@ -158,14 +158,14 @@ fmt_fprint(FILE *stream, const char *fmt, ...)
 int
 fmt_vfnprint(FILE *stream, int n, const char *fmt, va_list args)
 {
-  FmtPunningDevice pd = { .f = stream };
+  FmtConv pd = { .f = stream };
   return fmt_format_impl(fmt_stream_putch, pd.s, n, fmt, args);
 }
 
 int
 fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
 {
-  FmtPunningDevice pd = { .f = stream };
+  FmtConv pd = { .f = stream };
   FMT_VWRAPPER(fmt_stream_putch, pd.s, n, fmt, args);
   return r;
 }
@@ -175,7 +175,7 @@ fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
   s.data = malloc(c); \
   s.cap = c; \
   s.len = 0; \
-  FmtPunningDevice conv = { .str = &s }
+  FmtConv conv = { .str = &s }
 
 char *
 fmt_vformat(const char *fmt, va_list args)
