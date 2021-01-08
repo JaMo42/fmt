@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <locale.h>
 #include <math.h>
+#include <stdlib.h>
 
 SU_SOURCE;
 
@@ -286,6 +287,7 @@ su_module(fmt_tests,{
   su_test(format, {
     char *s = fmt_format("{} {c} \"{f:{}^,+{}.{}}\"", "msg", '=', 3.1415926, '*', 20, 3);
     su_assert(streq(s, "msg = \"*******+3.141*******\""));
+    free (s);
   })
 
   su_test(formatted_length, {

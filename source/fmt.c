@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 #include "fmt/fmt.h"
 
 int fmt_format_initial_size = 16;
@@ -177,12 +178,17 @@ fmt_fnprint(FILE *stream, int n, const char *fmt, ...)
   s.len = 0; \
   FmtConv conv = { .str = &s }
 
+#define FMT_FORMAT_CLEAN\
+  char *str = strndup (s.data, s.len); \
+  free (s.data)
+
 char *
 fmt_vformat(const char *fmt, va_list args)
 {
   FMT_FORMAT_INIT(fmt_format_initial_size);
   fmt_format_impl(fmt_format_putch, conv.s, INT_MAX, fmt, args);
-  return s.data;
+  FMT_FORMAT_CLEAN;
+  return str;
 }
 
 char *
@@ -191,7 +197,8 @@ fmt_format(const char *fmt, ...)
   FMT_FORMAT_INIT(fmt_format_initial_size);
   FMT_VWRAPPER(fmt_format_putch, conv.s, INT_MAX, fmt, args);
   (void)r;
-  return s.data;
+  FMT_FORMAT_CLEAN;
+  return str;
 }
 
 char *
@@ -199,7 +206,8 @@ fmt_vnformat(int n, const char *fmt, va_list args)
 {
   FMT_FORMAT_INIT(n);
   fmt_format_impl(fmt_format_putch, conv.s, n, fmt, args);
-  return s.data;
+  FMT_FORMAT_CLEAN;
+  return str;
 }
 
 char *
@@ -208,7 +216,8 @@ fmt_nformat(int n, const char *fmt, ...)
   FMT_FORMAT_INIT(n);
   FMT_VWRAPPER(fmt_format_putch, conv.s, n, fmt, args);
   (void)r;
-  return s.data;
+  FMT_FORMAT_CLEAN;
+  return str;
 }
 
 int

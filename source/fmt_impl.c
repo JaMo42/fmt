@@ -412,7 +412,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
   const char *p;
 
   // Default type information.
-  // This gets only parsed once, when needed, indicated by the
+  // This gets only parsed once per call, when needed, indicated by the
   // "parsed_default_type" flag.
   bool parsed_default_type = false;
   char default_type = 's';
