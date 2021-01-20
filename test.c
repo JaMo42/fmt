@@ -272,6 +272,13 @@ su_module(fmt_tests,{
     fmt_default_type = "s";
   })
 
+  su_test(empty_default_type, {
+    fmt_default_type = "";
+    print ("{} {d} {d}", 1, 2, 3);
+    check (" 1 2");
+    fmt_default_type = "s";
+  })
+
   su_test(invalid_type, {
     print("{y}{d}", 1, 2);
     check("1");
