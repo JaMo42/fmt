@@ -7,8 +7,6 @@
 #include <math.h>
 #include <stdlib.h>
 
-SU_SOURCE;
-
 #define FMT_TEST_BUFSIZE 1024*2
 
 #define streq(a, b) !strcmp(a, b)
@@ -51,7 +49,7 @@ su_module(fmt_tests,{
   locale_t de_loc = newlocale(LC_NUMERIC_MASK, "de_DE.UTF-8", (locale_t)0);
   static char buf[FMT_TEST_BUFSIZE];
 
-  su_test(alignment, {
+  su_test("alignment", {
     // Right
     print("{:>10}", "test");
     check("      test");
@@ -70,12 +68,12 @@ su_module(fmt_tests,{
     check("******test");
   })
 
-  su_test(character, {
+  su_test("character", {
     print("{c}{c}{c}", 'a', 'b', 'c');
     check("abc");
   })
 
-  su_test(string, {
+  su_test("string", {
     // Implied type, simple
     print("{} {s}", "one", "two");
     check("one two");
@@ -86,7 +84,7 @@ su_module(fmt_tests,{
     check("     xylop");
   })
 
-  su_test(integer_decimal, {
+  su_test("integer_decimal", {
     print("{d} {d}", 23, -23);
     check("23 -23");
     // Pad zeros
@@ -104,7 +102,7 @@ su_module(fmt_tests,{
     check("+00023");
   })
 
-  su_test(integer_bases, {
+  su_test("integer_bases", {
     int d = 123456789;
     // Hex
     print("{x} {X}", d, d);
@@ -129,7 +127,7 @@ su_module(fmt_tests,{
     check("+0x0075bcd15");
   })
 
-  su_test(float, {
+  su_test("float", {
     float pi = 3.1415926f;
     print("{f} {F}", 1.234f, 1.234f);
     check("1.233999 1.233999");
@@ -149,7 +147,7 @@ su_module(fmt_tests,{
     check("inf INF");
   })
 
-  su_test(float_exp, {
+  su_test("float_exp", {
     float f = 123456.789;
     print("{e} {E}", f, f);
     check("1.234567e+05 1.234567E+05");
@@ -159,7 +157,7 @@ su_module(fmt_tests,{
     check("1.e+05");
   })
 
-  su_test(float_percent, {
+  su_test("float_percent", {
     float p = 0.456789;
     print("{%}", p);
     check("45.678898%");
@@ -171,20 +169,20 @@ su_module(fmt_tests,{
     check("45.%");
   })
 
-  su_test(boolean, {
+  su_test("boolean", {
     print("{B} {B}", true, false);
     check("true false");
     print("{B:#} {B:#}", true, false);
     check("True False");
   })
 
-  su_test(pointer, {
+  su_test("pointer", {
     void *p = (void*)0x123456ULL;
     print("{p}", p);
     check("0x123456");
   })
 
-  su_test(time, {
+  su_test("time", {
     time_t _t = time(NULL);
     struct tm *t = localtime(&_t);
     char buf2[128];
@@ -195,20 +193,20 @@ su_module(fmt_tests,{
     check(buf2);
   })
 
-  su_test(base64, {
+  su_test("base64", {
     print("{D:.{}}", lorem_ipsum, strlen(lorem_ipsum));
     check(lorem_ipsum_b64);
     print("{D:#.{}}", lorem_ipsum, strlen(lorem_ipsum));
     check(lorem_ipsum_b64_nl);
   })
 
-  su_test(written, {
+  su_test("written", {
     int n;
     print("123456{n}", &n);
     su_assert_eq(n, 6);
   })
 
-  su_test(parameterized_format, {
+  su_test("parameterized_format", {
     print("{:^{}}", "test", 10);
     check("   test   ");
     print("{:.{}} = {f:.{}}", "Gibberish", 3, 2.7182, 3);
@@ -217,7 +215,7 @@ su_module(fmt_tests,{
     check("  2.71");
   })
 
-  su_test(grouping, {
+  su_test("grouping", {
     // Integer
     print("{d:,} {d:_}", 123456789, 123456789);
     check("123,456,789 123_456_789");
@@ -233,14 +231,14 @@ su_module(fmt_tests,{
     check("1,234.567800 1_234.567800");
   })
 
-  su_test(unsigned_flag, {
+  su_test("unsigned_flag", {
     print("{d} {ud}", 23, 23);
     check("23 23");
     print("{d} {ud}", -23, -23);
     check("-23 4294967273");
   })
 
-  su_test(locale, {
+  su_test("locale", {
     // Integer
     uselocale(us_loc);
     print("{nd} {nd:,} {nd:_}", 12345678, 12345678, 12345678);
@@ -257,13 +255,13 @@ su_module(fmt_tests,{
     check("1234,567800 1.234,567800 1.234,567800");
   })
 
-  su_test(implied_types, {
+  su_test("implied_types", {
     // No need to test {} here, just locale/unsigned flags
     print("{u} {un}", 23, 23);
     check("23 23");
   })
 
-  su_test(default_type, {
+  su_test("default_type", {
     print("{}", "test");
     check("test");
     fmt_default_type = "f";
@@ -272,32 +270,32 @@ su_module(fmt_tests,{
     fmt_default_type = "s";
   })
 
-  su_test(empty_default_type, {
+  su_test("empty_default_type", {
     fmt_default_type = "";
     print ("{} {d} {d}", 1, 2, 3);
     check (" 1 2");
     fmt_default_type = "s";
   })
 
-  su_test(invalid_type, {
+  su_test("invalid_type", {
     print("{y}{d}", 1, 2);
     check("1");
     print("{y:{}<{}.{}}{d} {d}", 1, '_', 10, 3, 2);
     check("1 95");
   })
 
-  su_test(misc, {
+  su_test("misc", {
     print("} }}");
     check(" }");
   })
 
-  su_test(format, {
+  su_test("format", {
     char *s = fmt_format("{} {c} \"{f:{}^,+{}.{}}\"", "msg", '=', 3.1415926, '*', 20, 3);
     su_assert(streq(s, "msg = \"*******+3.141*******\""));
     free (s);
   })
 
-  su_test(formatted_length, {
+  su_test("formatted_length", {
     su_assert_eq(fmt_formatted_length("{f:+,.{}}", 3.1415926, 3), 6);
   })
 
