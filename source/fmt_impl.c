@@ -123,7 +123,6 @@ fmt_reset_format_specifier(FmtFormatSpecifier *fs)
 
 #include "fmt_impl_formatters.h"
 
-#define FMT_IS_PARAM (fmt[0] == '{' && fmt[1] == '}')
 /**
  * Parses a format specifier
  * @param fmt format string starting after the ':'
@@ -215,7 +214,6 @@ fmt_parse_format_specifier(const char *fmt, FmtFormatSpecifier *fs, va_list args
 
   return p;
 }
-#undef FMT_IS_PARAM
 
 /**
  * Parses a type string.
@@ -249,7 +247,7 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
       *lm = FMT_SIZE;
       ++p;
     }
-  else if (*p == 'k')
+  else if (*p == 't')
     {
       *lm = FMT_PTRDIFF;
       ++p;
@@ -284,6 +282,9 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
     {
       *type = *p;
       ++p;
+      // If there are more characters the type is invalid
+      if (!(*p == ':' || *p == '}' || *p == '\0'))
+          *type = 0;
     }
   else if (*p == '}' || *p == ':')
     {
@@ -291,7 +292,7 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
       // Check if we mistook a flag for the type
       if (*unsigned_flag)
         *type = 'd';
-      else if (*lm == FMT_PTRDIFF)
+      else if (*lm == FMT_PTRDIFF && *type != 'd')
         {
           *lm = FMT_NONE;
           *type = 't';
@@ -299,14 +300,14 @@ fmt_parse_type(const char *p, FmtLengthModifier *lm, bool *unsigned_flag, char *
 #ifdef FMT_SUPPORT_LOCALE
       else if (*locale_flag && !*unsigned_flag)
         {
-          *locale_flag = false;
+         *locale_flag = false;
           *type = 'n';
         }
 #endif
     }
   else
     {
-      // There was a character that, that is not a known type specifier.
+      // There was a character that is not a known type specifier.
       *type = 0;
     }
   return p;
@@ -392,6 +393,18 @@ fmt_get_arg(FmtArg *arg, char type, FmtLengthModifier lm, bool unsigned_flag, va
   return true;
 }
 
+static inline const char *
+fmt_skip_format_spec (const char *p)
+{
+  while (*p != '}')
+    {
+      ++p;
+      if (*p == '{')
+        p += 2;
+    }
+  return p;
+}
+
 // Prints the integer argument, depending on the unsigned flag
 #define FMT_PRINT_INT(b) \
   if (unsigned_flag) \
@@ -463,10 +476,13 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
             {
               // No type given, use default
               if (!parsed_default_type)
-                // First time, parse default type string.
-                fmt_parse_type(fmt_default_type, &default_lm,
-                               &default_unsigned_flag, &default_type,
-                               &default_locale_flag);
+                {
+                  // First time, parse default type string.
+                  fmt_parse_type(fmt_default_type, &default_lm,
+                                 &default_unsigned_flag, &default_type,
+                                 &default_locale_flag);
+                  parsed_default_type = true;
+                }
               type = default_type;
               unsigned_flag = default_unsigned_flag;
               locale_flag = default_locale_flag;
@@ -479,12 +495,8 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
           // specifier.
           if (!fmt_get_arg(&arg, type, lm, unsigned_flag, args))
             {
-              while (*p != '}')
-                {
-                  ++p;
-                  if (*p == '{')
-                    p += 2;
-                }
+              p = fmt_skip_format_spec (p);
+              goto skip;
             }
 
           if (*p == ':')
@@ -499,12 +511,22 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
                   if (p[0] == '{' && p[1] == '}')
                     {
                       strftime_fmt = va_arg(args, char *);
+                      if (strftime_fmt == NULL || strftime_fmt[0] == '\0')
+                        {
+                          p = fmt_skip_format_spec (p);
+                          goto skip;
+                        }
                       strftime_allocated = false;
                       p += 2;
                     }
                   else
                     {
                       int len = strchr(p, '}') - p;
+                      if (len == 0)
+                        {
+                          p = fmt_skip_format_spec (p);
+                          goto skip;
+                        }
                       strftime_fmt = strndup(p, len);
                       strftime_allocated = true;
                       p += len;
@@ -618,6 +640,7 @@ fmt_format_impl(FmtPutch putch, char *buffer, int maxlen, const char *fmt, va_li
         }
       if (written == maxlen)
         break;
+skip:;
     }
 #ifdef FMT_SUPPORT_TIME
   if (strftime_allocated)
