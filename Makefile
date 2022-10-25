@@ -41,7 +41,7 @@ $(LIB).a: build/fmt.o build/fmt_impl.o
 	ar rcs $@ $^
 
 test: build/test.o ./$(LIB).a
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 example: custom_putch_example.c $(LIB).a
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
