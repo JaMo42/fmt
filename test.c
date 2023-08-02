@@ -1,6 +1,7 @@
 #include <smallunit.h>
 #include <icecream.h>
 #define FMT_IMPLEMENTATION
+//#define FMT_BIN_GROUP_NIBBLES
 #include "fmt.h"
 
 static bool expect_impl(int source_line, const char *expected, const char *fmt, int arg_count, ...) {
@@ -44,6 +45,20 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
         }                                        \
     } while(0)
 
+typedef struct {
+    const fmt_char8_t *data;
+    char32_t codepoint;
+    int size;
+} Unicode_Test_Case;
+
+const Unicode_Test_Case unicode_test_cases[] = {
+    {(const fmt_char8_t *)"a", U'a', 1},
+    {(const fmt_char8_t *)"Ä", U'Ä', 2},
+    {(const fmt_char8_t *)"가", U'가', 3},
+    {(const fmt_char8_t *)"💚", U'💚', 4},
+};
+const int unicode_test_case_count = sizeof(unicode_test_cases) / sizeof(Unicode_Test_Case);
+
 su_module_d(internal_functions, "internal functions", {
     su_test("integer width", {
         su_assert_eq(fmt__unsigned_width(1000, 10), 4);
@@ -83,6 +98,34 @@ su_module_d(internal_functions, "internal functions", {
             fmt__get_base_and_exponent(f, &base, &exp);
             su_assert_eq(exp, control_exp);
             su_assert_eq(base, control_base);
+        }
+    })
+
+    su_test("utf8 encode", {
+        char data[4];
+        for (
+            const Unicode_Test_Case
+                *c = unicode_test_cases,
+                *end = unicode_test_cases + unicode_test_case_count;
+            c != end;
+            ++c
+        ) {
+            su_assert_eq(fmt__utf8_encode(c->codepoint, data), c->size);
+            su_assert(memcmp(data, c->data, c->size) == 0);
+        }
+    })
+
+    su_test("utf8 decode", {
+        char32_t codepoint;
+        for (
+            const Unicode_Test_Case
+                *c = unicode_test_cases,
+                *end = unicode_test_cases + unicode_test_case_count;
+            c != end;
+            ++c
+        ) {
+            su_assert_eq(fmt__utf8_decode(c->data, &codepoint), c->size);
+            su_assert_eq(codepoint, c->codepoint);
         }
     })
 })
@@ -195,8 +238,17 @@ su_module(formatting, {
     })
 
     su_test("grouping", {
+        expect("100", "{:'}", 100);
         expect("1'000", "{:'}", 1000);
         expect("10'000'000", "{:'}", 10000000);
+        expect("1'2345'6789", "{x:'}", 0x123456789);
+        expect("AB'CDEF", "{X:'}", 0xabcdef);
+        #ifdef FMT_BIN_GROUP_NIBBLES
+        expect("101'0101'0101", "{b:'}", 0b010101010101);
+        #else
+        expect("101'01010101", "{b:'}", 0b010101010101);
+        #endif
+        expect("777'644", "{o:'}", 0777644);
     })
 })
 

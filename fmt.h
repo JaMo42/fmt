@@ -575,6 +575,29 @@ static int fmt__display_width(char32_t ucs) {
       (ucs >= 0x30000 && ucs <= 0x3fffd)));
 }
 
+/// Decodes 1 codepoint from valid UTF-8 data.  Returns the number of bytes the
+/// codepoint uses.
+static int fmt__utf8_decode(const fmt_char8_t *data, char32_t *codepoint) {
+        if (data[0] < 0x80) {
+            *codepoint = data[0];
+            return 1;
+        } else if (data[0] < 0xe0) {
+            *codepoint = ((char32_t)(data[0] & 0x1f) << 6) | (data[1] & 0x3f);
+            return 2;
+        } else if (data[0] < 0xf0) {
+            *codepoint = (((char32_t)(data[0] & 0x0f) << 12)
+                         | ((char32_t)(data[1] & 0x3f) << 6)
+                         | (data[2] & 0x3f));
+            return 3;
+        } else {
+            *codepoint = (((char32_t)(data[0] & 0x07) << 18)
+                         | ((char32_t)(data[1] & 0x3f) << 12)
+                         | ((char32_t)(data[2] & 0x3f) << 6)
+                         | (data[3] & 0x3f));
+            return 4;
+        }
+}
+
 /// Returns the display width and number of codepoints in a UTF-8 encoded string.
 /// If `size` is negative it is determined using `strlen`.
 /// If `max_chars_for_width` is non-negative only that many characters are used
@@ -592,24 +615,7 @@ static fmt_Int_Pair fmt__utf8_width_and_length(const char *str, int size, int ma
     const fmt_char8_t *end = p + size;
     char32_t codepoint;
     while (p != end) {
-        if (p[0] < 0x80) {
-            codepoint = p[0];
-            ++p;
-        } else if (p[0] < 0xe0) {
-            codepoint = ((char32_t)(p[0] & 0x1f) << 6) | (p[1] & 0x3f);
-            p += 2;
-        } else if (p[0] < 0xf0) {
-            codepoint = (((char32_t)(p[0] & 0x0f) << 12)
-                         | ((char32_t)(p[1] & 0x3f) << 6)
-                         | (p[2] & 0x3f));
-            p += 3;
-        } else {
-            codepoint = (((char32_t)(p[0] & 0x07) << 18)
-                         | ((char32_t)(p[1] & 0x3f) << 12)
-                         | ((char32_t)(p[2] & 0x3f) << 6)
-                         | (p[3] & 0x3f));
-            p += 4;
-        }
+        p += fmt__utf8_decode(p, &codepoint);
         if (max_chars_for_width-- > 0) {
             width += fmt__display_width(codepoint);
         }
@@ -675,7 +681,7 @@ static int fmt__utf32_width(const char32_t *str, int size) {
     return width;
 }
 
-static int fmt__encode_utf8(char32_t codepoint, char *buf) {
+static int fmt__utf8_encode(char32_t codepoint, char *buf) {
     static const char REPLACEMENT_CHARACTER_UTF8[] = "\xEF\xBF\xBD";
     if (!fmt__is_valid_codepoint(codepoint)) {
         *buf++ = REPLACEMENT_CHARACTER_UTF8[0];
@@ -718,7 +724,7 @@ static int fmt__write_utf8(fmt_Writer *writer, const char *str, int len) {
 
 static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
     char buf[4];
-    const int len = fmt__encode_utf8(codepoint, buf);
+    const int len = fmt__utf8_encode(codepoint, buf);
     return writer->write_data(writer, buf, len);
 }
 
@@ -1105,15 +1111,21 @@ static void fmt__reverse(char *buf, int len) {
 
 static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char32_t groupchar, int interval) {
     char grouputf8[4];
-    const int grouplen = fmt__encode_utf8(groupchar, grouputf8);
+    const int grouplen = fmt__utf8_encode(groupchar, grouputf8);
     const int offset = len % interval;
+    const char *const end = buf + len;
     int written = 0;
+    bool skip = true;
     if (offset) {
         written += writer->write_data(writer, buf, offset);
+        skip = false;
     }
-    const char *const end = buf + len;
     for (buf = buf + offset; buf != end; buf += interval) {
-        written += writer->write_data(writer, grouputf8, grouplen);
+        if (skip) {
+            skip = false;
+        } else {
+            written += writer->write_data(writer, grouputf8, grouplen);
+        }
         written += writer->write_data(writer, buf, interval);
     }
     return written;
@@ -1142,14 +1154,7 @@ static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char
         return writer->write_data(writer, buf, len); \
     } \
     static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, char32_t groupchar) { \
-        /* Print 2 digits at a time using this lookup string.  Doing 3 at once
-           was actually slightly slower on my machine.  For numbers with an
-           uneven amount of digits this will just write an extra `0` into the
-           buffer but since we use the previously calculated length for the
-           reversing and writing that will just be discarded. */ \
         const char *digitpairs = _lookup_string; \
-        /* Initialize the buffer with one zero since the while loop will never
-           run if `n` is zero. */ \
         char buf[_buf_size] = {'0'}; \
         char *p = buf; \
         int idx; \
@@ -1163,17 +1168,11 @@ static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char
         return fmt__write_grouped(writer, buf, len, groupchar, _grouping_interval); \
     }
 
-FMT_DEFINE_WRITE_DIGITS(
-    fmt__write_digits_2,
-    4,
-    64,
 #ifdef FMT_BIN_GROUP_NIBBLES
-    4,
+FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 4,"00100111");
 #else
-    8,
+FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 8,"00100111");
 #endif
-    "00100111"
-);
 
 FMT_DEFINE_WRITE_DIGITS(
     fmt__write_digits_10,
@@ -1196,7 +1195,8 @@ FMT_DEFINE_WRITE_DIGITS(
     fmt__write_digits_8,
     64,
     24,
-    3, // TODO
+    // Python uses 4, Rust doesn't even have thousands separators, printf also uses 3.
+    3,
     "0010203040506070"
     "0111213141516171"
     "0212223242526272"
@@ -1389,8 +1389,7 @@ static int fmt__print_utf32(fmt_Writer *writer, fmt_Format_Specifier *fs, const 
 
 static int fmt__print_char(fmt_Writer *writer, fmt_Format_Specifier *fs, char32_t ch) {
     char buf[4];
-    const int len = fmt__encode_utf8(ch, buf);
-    //return writer->write_data(writer, buf, len);
+    const int len = fmt__utf8_encode(ch, buf);
     fs->precision = -1;
     return fmt__print_utf8(writer, fs, buf, len);
 }
