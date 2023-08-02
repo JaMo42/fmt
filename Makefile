@@ -1,5 +1,6 @@
 CC ?= gcc
 CFLAGS ?= -Wall -Wextra -std=c11
+LDFLAGS = -lm
 
 ifdef $(RELEASE)
 	CFLAGS += -march=native -mtune=native -O3
@@ -8,7 +9,7 @@ else
 endif
 
 test: test.c fmt.h
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 .PHONY: run
 run: test

@@ -33,6 +33,22 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_DEFAULT_TIME_FORMAT "%a %b %d %H:%M:%S %Y"
 #endif
 
+#ifndef FMT_LOWER_INF
+#  define FMT_LOWER_INF "inf"
+#endif
+
+#ifndef FMT_UPPER_INF
+#  define FMT_UPPER_INF "INF"
+#endif
+
+#ifndef FMT_LOWER_NAN
+#  define FMT_LOWER_NAN "NaN"
+#endif
+
+#ifndef FMT_UPPER_NAN
+#  define FMT_UPPER_NAN "NAN"
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
 ////////////////////////////////////////////////////////////////////////////////
@@ -441,7 +457,7 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
             return "cdxXbo";
         case fmt__TYPE_FLOAT:
         case fmt__TYPE_DOUBLE:
-            return "feg%";
+            return "fFeEgG%";
         case fmt__TYPE_STRING:
         case fmt__TYPE_STRING_16:
         case fmt__TYPE_STRING_32:
@@ -960,11 +976,11 @@ static const char * fmt__parse_specifier(
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
-    const char *digits;
     const char *prefix;
-    int base;
     int prefix_len;
-    int grouping_interval;
+    int base;
+    int (*write_digits)(fmt_Writer *writer, uint64_t n, int len);
+    int (*write_digits_grouped)(fmt_Writer *writer, uint64_t n, int len, char32_t group_char);
 } fmt_Base;
 
 static int fmt__unsigned_width_10(unsigned long long n) {
@@ -1045,14 +1061,6 @@ static int fmt__unsigned_width(unsigned long long n, int base) {
     }
 }
 
-static int fmt__signed_width(long long n, int base) {
-    if (n < 0) {
-        return 1 + fmt__unsigned_width(-n, base);
-    } else {
-        return fmt__unsigned_width(n, base);
-    }
-}
-
 static int fmt__min(int a, int b) {
     return a < b ? a : b;
 }
@@ -1095,30 +1103,173 @@ static void fmt__reverse(char *buf, int len) {
     }
 }
 
-static int fmt__write_digits(fmt_Writer *writer, uint64_t number, int len, int base, const char *digits) {
-    if (number == 0) {
-        return writer->write_byte(writer, '0');
+static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char32_t groupchar, int interval) {
+    char grouputf8[4];
+    const int grouplen = fmt__encode_utf8(groupchar, grouputf8);
+    const int offset = len % interval;
+    int written = 0;
+    if (offset) {
+        written += writer->write_data(writer, buf, offset);
     }
-    char buf[32] = {0};
-    char *p = buf;
-    while (number) {
-        *p++ = digits[number % base];
-        number /= base;
+    const char *const end = buf + len;
+    for (buf = buf + offset; buf != end; buf += interval) {
+        written += writer->write_data(writer, grouputf8, grouplen);
+        written += writer->write_data(writer, buf, interval);
     }
-    fmt__reverse(buf, len);
-    return writer->write_data(writer, buf, len);
+    return written;
 }
 
+#define FMT_DEFINE_WRITE_DIGITS(_name, _div, _buf_size, _grouping_interval, _lookup_string) \
+    static int _name(fmt_Writer *writer, uint64_t n, int len) { \
+        /* Print 2 digits at a time using this lookup string.  Doing 3 at once
+           was actually slightly slower on my machine.  For numbers with an
+           uneven amount of digits this will just write an extra `0` into the
+           buffer but since we use the previously calculated length for the
+           reversing and writing that will just be discarded. */ \
+        const char *digitpairs = _lookup_string; \
+        /* Initialize the buffer with one zero since the while loop will never
+           run if `n` is zero. */ \
+        char buf[_buf_size] = {'0'}; \
+        char *p = buf; \
+        int idx; \
+        while (n) { \
+            idx = (n % _div) * 2; \
+            memcpy(p, digitpairs + idx, 2); \
+            p += 2; \
+            n /= _div; \
+        } \
+        fmt__reverse(buf, len); \
+        return writer->write_data(writer, buf, len); \
+    } \
+    static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, char32_t groupchar) { \
+        /* Print 2 digits at a time using this lookup string.  Doing 3 at once
+           was actually slightly slower on my machine.  For numbers with an
+           uneven amount of digits this will just write an extra `0` into the
+           buffer but since we use the previously calculated length for the
+           reversing and writing that will just be discarded. */ \
+        const char *digitpairs = _lookup_string; \
+        /* Initialize the buffer with one zero since the while loop will never
+           run if `n` is zero. */ \
+        char buf[_buf_size] = {'0'}; \
+        char *p = buf; \
+        int idx; \
+        while (n) { \
+            idx = (n % _div) * 2; \
+            memcpy(p, digitpairs + idx, 2); \
+            p += 2; \
+            n /= _div; \
+        } \
+        fmt__reverse(buf, len); \
+        return fmt__write_grouped(writer, buf, len, groupchar, _grouping_interval); \
+    }
+
+FMT_DEFINE_WRITE_DIGITS(
+    fmt__write_digits_2,
+    4,
+    64,
+#ifdef FMT_BIN_GROUP_NIBBLES
+    4,
+#else
+    8,
+#endif
+    "00100111"
+);
+
+FMT_DEFINE_WRITE_DIGITS(
+    fmt__write_digits_10,
+    100,
+    20,
+    3,
+    "00102030405060708090"
+    "01112131415161718191"
+    "02122232425262728292"
+    "03132333435363738393"
+    "04142434445464748494"
+    "05152535455565758595"
+    "06162636465666768696"
+    "07172737475767778797"
+    "08182838485868788898"
+    "09192939495969798999"
+);
+
+FMT_DEFINE_WRITE_DIGITS(
+    fmt__write_digits_8,
+    64,
+    24,
+    3, // TODO
+    "0010203040506070"
+    "0111213141516171"
+    "0212223242526272"
+    "0313233343536373"
+    "0414243444546474"
+    "0515253545556575"
+    "0616263646566676"
+    "0717273747576777"
+);
+
+FMT_DEFINE_WRITE_DIGITS(
+    fmt__write_digits_16_lower,
+    256,
+    16,
+    4,
+    "00102030405060708090a0b0c0d0e0f0"
+    "01112131415161718191a1b1c1d1e1f1"
+    "02122232425262728292a2b2c2d2e2f2"
+    "03132333435363738393a3b3c3d3e3f3"
+    "04142434445464748494a4b4c4d4e4f4"
+    "05152535455565758595a5b5c5d5e5f5"
+    "06162636465666768696a6b6c6d6e6f6"
+    "07172737475767778797a7b7c7d7e7f7"
+    "08182838485868788898a8b8c8d8e8f8"
+    "09192939495969798999a9b9c9d9e9f9"
+    "0a1a2a3a4a5a6a7a8a9aaabacadaeafa"
+    "0b1b2b3b4b5b6b7b8b9babbbcbdbebfb"
+    "0c1c2c3c4c5c6c7c8c9cacbcccdcecfc"
+    "0d1d2d3d4d5d6d7d8d9dadbdcdddedfd"
+    "0e1e2e3e4e5e6e7e8e9eaebecedeeefe"
+    "0f1f2f3f4f5f6f7f8f9fafbfcfdfefff"
+);
+
+FMT_DEFINE_WRITE_DIGITS(
+    fmt__write_digits_16_upper,
+    256,
+    16,
+    4,
+    "00102030405060708090A0B0C0D0E0F0"
+    "01112131415161718191A1B1C1D1E1F1"
+    "02122232425262728292A2B2C2D2E2F2"
+    "03132333435363738393A3B3C3D3E3F3"
+    "04142434445464748494A4B4C4D4E4F4"
+    "05152535455565758595A5B5C5D5E5F5"
+    "06162636465666768696A6B6C6D6E6F6"
+    "07172737475767778797A7B7C7D7E7F7"
+    "08182838485868788898A8B8C8D8E8F8"
+    "09192939495969798999A9B9C9D9E9F9"
+    "0A1A2A3A4A5A6A7A8A9AAABACADAEAFA"
+    "0B1B2B3B4B5B6B7B8B9BABBBCBDBEBFB"
+    "0C1C2C3C4C5C6C7C8C9CACBCCCDCECFC"
+    "0D1D2D3D4D5D6D7D8D9DADBDCDDDEDFD"
+    "0E1E2E3E4E5E6E7E8E9EAEBECEDEEEFE"
+    "0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFFF"
+);
+
+#undef FMT_DEFINE_WRITE_DIGITS
+
 static const fmt_Base* fmt__get_base(char type) {
-    static const fmt_Base BASE_10 = (fmt_Base){ "0123456789", "", 10, 0, 3 };
-    #ifdef FMT_BIN_GROUP_BYTES
-    static const fmt_Base BASE_2 = (fmt_Base){ "01", "0b", 2, 2, 8 };
-    #else
-    static const fmt_Base BASE_2 = (fmt_Base){ "01", "0b", 2, 2, 4 };
-    #endif
-    static const fmt_Base BASE_16_UPPER = (fmt_Base){ "0123456789ABCDEF", "0X", 16, 2, 4 };
-    static const fmt_Base BASE_16_LOWER = (fmt_Base){ "0123456789abcdef", "0x", 16, 2, 4 };
-    static const fmt_Base BASE_8 = (fmt_Base){ "01234567", "0o", 8, 2, 4 };
+    #define FMT_DEF_BASE(_name, _base, _prefix, _writer_suffix) \
+        static const fmt_Base _name = (fmt_Base) { \
+            _prefix, \
+            sizeof(_prefix)-1, \
+            _base, \
+            fmt__write_digits_##_writer_suffix, \
+            fmt__write_digits_##_writer_suffix##_grouped \
+        }
+    FMT_DEF_BASE(BASE_2, 2, "0b", 2);
+    FMT_DEF_BASE(BASE_8, 8, "0o", 8);
+    FMT_DEF_BASE(BASE_10, 10, "", 10);
+    FMT_DEF_BASE(BASE_16_LOWER, 16, "0x", 16_lower);
+    FMT_DEF_BASE(BASE_16_UPPER, 16, "0X", 16_upper);
+    #undef FMT_DEF_BASE
     switch (type) {
     case 0:
     case 'd':
@@ -1132,7 +1283,7 @@ static const fmt_Base* fmt__get_base(char type) {
     case 'o':
         return &BASE_8;
     default:
-        fmt_panic("fmt__get_base: invalid type: {}", type);
+        fmt_panic("fmt: invalid type for integer base: {}", type);
     }
 }
 
@@ -1152,12 +1303,21 @@ static unsigned long long fmt__pow(unsigned long long base, unsigned long long e
 }
 
 static void fmt__get_base_and_exponent(double f, double *base, int *exponent) {
+    // The iterative version is faster (only tested on 1 machine) but is bound
+    // by the value of `d` so for large values we need to fall back to the math
+    // solution.
+    if (f > 0x1p66) {
+        *exponent = (int)log10(f);
+        *base = f / pow(10.0, *exponent);
+        return;
+    }
     double negate = 1.0;
     if (f < 0.0) {
         negate = -1.0;
         f = -f;
     }
-    int exp = 0, d = 1;
+    int exp = 0;
+    unsigned long long d = 1;
     if (f < 1.0) {
         for (; f * d < 1.0; d *= 10, --exp) {}
         f *= d;
@@ -1261,10 +1421,10 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
     if (pad_after_sign_and_base) {
         fmt__pad(writer, pad.first, padchar);
     }
-    if (fs->group && false) {
-        // TODO
+    if (fs->group) {
+        written += base->write_digits_grouped(writer, i, digits_width, fs->group);
     } else {
-        written += fmt__write_digits(writer, i, digits_width, base->base, base->digits);
+        written += base->write_digits(writer, i, digits_width);
     }
     fmt__pad(writer, pad.second, padchar);
 
@@ -1282,7 +1442,20 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
     return fmt__print_utf8(writer, fs, STRINGS[b], LEN[b]);
 }
 
+#define FMT__FLOAT_SPECIAL_CASES()                                                   \
+    do {                                                                             \
+        if (isinf(f)) {                                                              \
+            const char *const s = isupper(fs->type) ? FMT_UPPER_INF : FMT_LOWER_INF; \
+            return fmt__print_utf8(writer, fs, s, strlen(s));                        \
+        }                                                                            \
+        if (isnan(f)) {                                                              \
+            const char *const s = isupper(fs->type) ? FMT_UPPER_NAN : FMT_LOWER_NAN; \
+            return fmt__print_utf8(writer, fs, s, strlen(s));                        \
+        }                                                                            \
+    } while(0)
+
 static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
+    FMT__FLOAT_SPECIAL_CASES();
     char sign = 0;
     int integer_width, fraction_width = 0;
     unsigned long long integer, fraction;
@@ -1346,12 +1519,12 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     if (fs->group && false) {
         // TODO
     } else {
-        written += fmt__write_digits(writer, integer, integer_width, 10, "0123456789");
+        written += fmt__write_digits_10(writer, integer, integer_width);
     }
     if (!no_fraction) {
         // TODO: locale?
         written += writer->write_byte(writer, '.');
-        written += fmt__write_digits(writer, fraction, fraction_width, 10, "0123456789");
+        written += fmt__write_digits_10(writer, fraction, fraction_width);
     }
     fmt__pad(writer, pad.second, padchar);
 
@@ -1359,6 +1532,7 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
 }
 
 static int fmt__print_float_exponential(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
+    FMT__FLOAT_SPECIAL_CASES();
     int exp;
     fmt__get_base_and_exponent(f, &f, &exp);
     int written = fmt__print_float_decimal(writer, fs, f);
@@ -1374,6 +1548,8 @@ static int fmt__print_float_exponential(fmt_Writer *writer, fmt_Format_Specifier
     }
     return written;
 }
+
+#undef FMT__FLOAT_SPECIAL_CASES
 
 static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, const void *ptr) {
     fs->type = fs->type == 'P' ? 'X' : 'x';

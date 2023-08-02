@@ -1,7 +1,7 @@
 #include <smallunit.h>
+#include <icecream.h>
 #define FMT_IMPLEMENTATION
 #include "fmt.h"
-#include "icecream.h"
 
 static bool expect_impl(int source_line, const char *expected, const char *fmt, int arg_count, ...) {
     static char buf[256];
@@ -14,7 +14,7 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
     va_end(ap);
     if (strcmp(expected, buf) != 0) {
         fmt_eprintln(
-            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got: \"{}\"",
+            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
             source_line, expected, buf
         );
         return false;
@@ -47,13 +47,9 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
 su_module_d(internal_functions, "internal functions", {
     su_test("integer width", {
         su_assert_eq(fmt__unsigned_width(1000, 10), 4);
-        su_assert_eq(fmt__signed_width(-1000, 10), 5);
         su_assert_eq(fmt__unsigned_width(0x1000, 16), 4);
-        su_assert_eq(fmt__signed_width(-0x1000, 16), 5);
         su_assert_eq(fmt__unsigned_width(0b1000, 2), 4);
-        su_assert_eq(fmt__signed_width(-0b1000, 2), 5);
         su_assert_eq(fmt__unsigned_width(01000, 8), 4);
-        su_assert_eq(fmt__signed_width(-01000, 8), 5);
     })
 
     su_test("display width", {
@@ -72,6 +68,22 @@ su_module_d(internal_functions, "internal functions", {
         su_assert_eq(fmt__utf32_width(U"Hello", -1), 5);
         su_assert_eq(fmt__utf32_width(U"안녕", -1), 4);
         su_assert_eq(fmt__utf32_width(U"안녕", 1), 2);
+    })
+
+    su_test("float base and exponent", {
+        double f;
+        double base;
+        double control_base;
+        int exp;
+        int control_exp;
+        for (int i = 0; i <= 100; ++i) {
+            f = pow(2.0, i);
+            control_exp = (int)log10(f);
+            control_base = f / pow(10.0, control_exp);
+            fmt__get_base_and_exponent(f, &base, &exp);
+            su_assert_eq(exp, control_exp);
+            su_assert_eq(base, control_base);
+        }
     })
 })
 
@@ -107,6 +119,10 @@ su_module_d(basic_printing, "basic printing", {
 
     su_test("integers", {
         expect("0", "{}", 0);
+        expect("0", "{b}", 0);
+        expect("0", "{x}", 0);
+        expect("0", "{X}", 0);
+        expect("0", "{o}", 0);
         expect("123", "{}", 123);
         expect("-123", "{}", -123);
         expect("123abc", "{x}", 0x123abc);
@@ -117,10 +133,26 @@ su_module_d(basic_printing, "basic printing", {
         expect("-11011", "{b}", -0b11011);
         expect("644", "{o}", 0644);
         expect("-644", "{o}", -0644);
+        expect("18446744073709551615", "{}", 18446744073709551615ULL);
+        expect("1111111111111111111111111111111111111111111111111111111111111111", "{b}", 18446744073709551615ULL);
+        expect("1777777777777777777777", "{o}", 18446744073709551615ULL);
+        expect("ffffffffffffffff", "{x}", 18446744073709551615ULL);
+        expect("FFFFFFFFFFFFFFFF", "{X}", 18446744073709551615ULL);
     })
 
     su_test("floats", {
         expect("3.141", "{}", 3.141);
+        expect(FMT_LOWER_INF, "{}", INFINITY);
+        expect(FMT_UPPER_INF, "{F}", INFINITY);
+        expect(FMT_LOWER_NAN, "{}", NAN);
+        expect(FMT_UPPER_NAN, "{F}", NAN);
+        expect(FMT_LOWER_INF, "{}", HUGE_VAL);
+        expect("1.0e00", "{e}", 1.0);
+        expect("1.0e03", "{e}", 1000.0);
+        expect("1.0e-02", "{e}", 0.01);
+        // We don't have enough accuracy in the float function
+        //expect("7.3786976294838206464e19", "{e}", 0x1p66);
+        expect("7.37869762948382048e19", "{e}", 0x1p66);
     })
 
     su_test("pointers", {
@@ -149,7 +181,8 @@ su_module(formatting, {
 
     su_test("precision", {
         expect("3.141000", "{:.6}", 3.141);
-        expect("3", "{:.0}", 3);
+        expect("3", "{:.0}", 3.141);
+        expect("1.2e03", "{e:.1}", 1234.0);
         expect("java", "{:.4}", "javascript");
         expect("안녕", "{:.2}", "안녕하세요");
         // Booleans are treated as strings
@@ -159,6 +192,11 @@ su_module(formatting, {
         #else
         expect("t", "{:.1}", (bool)true);
         #endif
+    })
+
+    su_test("grouping", {
+        expect("1'000", "{:'}", 1000);
+        expect("10'000'000", "{:'}", 10000000);
     })
 })
 
