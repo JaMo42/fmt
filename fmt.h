@@ -11,8 +11,9 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <threads.h>
-
 #include <uchar.h>
+#include <math.h>
+#include <time.h>
 
 // `char8_t` is only available since C23 but we also want to support C11 so
 // since we need our typedef anyways we never use `char8_t` since we wouldn't
@@ -21,6 +22,16 @@ typedef uint_least8_t fmt_char8_t;
 
 // TODO: remove
 #include "icecream.h"
+
+#if __STDC_VERSION__ > 201710L
+#  define FMT__NORETURN [[noreturn]]
+#else
+#  define FMT__NORETURN _Noreturn
+#endif
+
+#ifndef FMT_DEFAULT_TIME_FORMAT
+#  define FMT_DEFAULT_TIME_FORMAT "%a %b %d %H:%M:%S %Y"
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
@@ -273,6 +284,7 @@ extern int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_coun
 /// adding a newline for the `-ln` variants.  It takes a stream because stdout
 /// and stderr are not const so we can't easily use static variables for them.
 extern int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...);
+FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *format, int arg_count, ...);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -334,6 +346,15 @@ extern int fmt__default_printer(FILE *stream, const char *format, bool newline, 
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__))    \
     )
 
+#define fmt_panic(_format, ...)              \
+    fmt__panic(                              \
+        __FILE__,                            \
+        __LINE__,                            \
+         _format,                            \
+        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+    )
+
 #endif /* FMT_H */
 
 #ifdef FMT_IMPLEMENTATION
@@ -374,12 +395,10 @@ static size_t fmt__va_get_unsigned_integer(va_list ap) {
         return n;
     }
     default:
-        fmt_eprintln("expected integer type");
-        abort();
+        fmt_panic("expected integer type");
     }
 negative:
-    fmt_eprintln("expected unsigned value");
-    abort();
+    fmt_panic("expected unsigned value");
 }
 
 static char32_t fmt__va_get_character(va_list ap) {
@@ -398,14 +417,16 @@ static char32_t fmt__va_get_character(va_list ap) {
     case fmt__TYPE_UNSIGNED:
         return va_arg(ap, char32_t);
     default:
-        fmt_eprintln("expected character type");
-        abort();
+        fmt_panic("expected character type");
     }
 }
 
 static const char *fmt__valid_display_types(fmt_Type_Id type) {
     switch (type) {
         case fmt__TYPE_CHAR:
+            // `t` is pretty useless here since it can only represent 127
+            // seconds since the epoch but we want it to be equivalent to the
+            // integer types.
             return "cdxXbo";
         case fmt__TYPE_SIGNED_CHAR:
         case fmt__TYPE_SHORT:
@@ -424,10 +445,10 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
         case fmt__TYPE_STRING:
         case fmt__TYPE_STRING_16:
         case fmt__TYPE_STRING_32:
-            return "sp";
+            return "spP";
         case fmt__TYPE_POINTER:
         case fmt__TYPE_UNKNOWN:
-            return "p";
+            return "pP";
         default:
             return "";
     }
@@ -457,8 +478,7 @@ int fmt__write_stream_str(fmt_Writer *p_self, const char *str) {
 
 static void fmt__string_writer_check(fmt_String_Writer *self, int space) {
     if (self->at + space >= self->end) {
-        fmt_eprintln("string writer overflow\n  current content: \"{:.{}}\"", self->string, self->at - self->string);
-        abort();
+        fmt_panic("string writer overflow\n  current content: \"{:.{}}\"", self->string, self->at - self->string);
     }
 }
 
@@ -582,8 +602,8 @@ static fmt_Int_Pair fmt__utf8_width_and_length(const char *str, int size, int ma
     return (fmt_Int_Pair) { width, length };
 }
 
-static int fmt__utf16_strlen(const char16_t *str) {
-    int length = 0;
+static size_t fmt__utf16_strlen(const char16_t *str) {
+    size_t length = 0;
     while (*str++) {
         ++length;
     }
@@ -620,8 +640,8 @@ static fmt_Int_Pair fmt__utf16_width_and_length(const char16_t *str, int size, i
     return (fmt_Int_Pair) { width, length };
 }
 
-static int fmt__utf32_strlen(const char32_t *str) {
-    int length = 0;
+static size_t fmt__utf32_strlen(const char32_t *str) {
+    size_t length = 0;
     while (*str++) {
         ++length;
     }
@@ -885,8 +905,7 @@ static const char * fmt__parse_specifier(
     } else if (*format_specifier == ':') {
         ++format_specifier;
     } else {
-        fmt_eprintln("expected : or } after type in format specifier {}", specifier_number);
-        abort();
+        fmt_panic("expected : or } after type in format specifier {}", specifier_number);
     }
     if ((parsed = fmt__parse_alignment(*format_specifier))) {
         out->align = (fmt_Alignment)parsed;
@@ -1067,7 +1086,7 @@ static fmt_Int_Pair fmt__distribute_padding(int amount, fmt_Alignment align) {
     return result;
 }
 
-static void fmt__rev(char *buf, int len) {
+static void fmt__reverse(char *buf, int len) {
     const int mid = len / 2;
     for (int i = 0; i < mid; ++i) {
         char t = buf[i];
@@ -1077,13 +1096,16 @@ static void fmt__rev(char *buf, int len) {
 }
 
 static int fmt__write_digits(fmt_Writer *writer, uint64_t number, int len, int base, const char *digits) {
+    if (number == 0) {
+        return writer->write_byte(writer, '0');
+    }
     char buf[32] = {0};
     char *p = buf;
     while (number) {
         *p++ = digits[number % base];
         number /= base;
     }
-    fmt__rev(buf, len);
+    fmt__reverse(buf, len);
     return writer->write_data(writer, buf, len);
 }
 
@@ -1110,20 +1132,46 @@ static const fmt_Base* fmt__get_base(char type) {
     case 'o':
         return &BASE_8;
     default:
-        fmt_eprintln("fmt__get_base: invalid type: {}", type);
-        abort();
+        fmt_panic("fmt__get_base: invalid type: {}", type);
     }
+}
+
+static unsigned long long fmt__pow(unsigned long long base, unsigned long long exp) {
+    // https://stackoverflow.com/a/101613
+    unsigned long long result = 1;
+    for (;;)
+    {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        if (!exp)
+            break;
+        base *= base;
+    }
+    return result;
+}
+
+static void fmt__get_base_and_exponent(double f, double *base, int *exponent) {
+    double negate = 1.0;
+    if (f < 0.0) {
+        negate = -1.0;
+        f = -f;
+    }
+    int exp = 0, d = 1;
+    if (f < 1.0) {
+        for (; f * d < 1.0; d *= 10, --exp) {}
+        f *= d;
+    } else if (f >= 10.0) {
+        for (; f / d >= 10.0; d *= 10, ++exp) {}
+        f /= d;
+    }
+    *base = f * negate;
+    *exponent = exp;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Printing functions
 ////////////////////////////////////////////////////////////////////////////////
-
-static int fmt__print_char(fmt_Writer *writer, fmt_Format_Specifier *fs, char32_t ch) {
-    char buf[4];
-    const int len = fmt__encode_utf8(ch, buf);
-    return writer->write_data(writer, buf, len);
-}
 
 static int fmt__print_utf8(fmt_Writer *writer, fmt_Format_Specifier *fs, const char *string, int len) {
     const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(string, len, fs->precision);
@@ -1179,6 +1227,14 @@ static int fmt__print_utf32(fmt_Writer *writer, fmt_Format_Specifier *fs, const 
     return written;
 }
 
+static int fmt__print_char(fmt_Writer *writer, fmt_Format_Specifier *fs, char32_t ch) {
+    char buf[4];
+    const int len = fmt__encode_utf8(ch, buf);
+    //return writer->write_data(writer, buf, len);
+    fs->precision = -1;
+    return fmt__print_utf8(writer, fs, buf, len);
+}
+
 static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned long long i, char sign) {
     const fmt_Base *base = fmt__get_base(fs->type);
     const int digits_width = fmt__unsigned_width(i, base->base);
@@ -1193,7 +1249,6 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
     const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
 
     int written = pad.first + pad.second;
-
     if (!pad_after_sign_and_base) {
         fmt__pad(writer, pad.first, padchar);
     }
@@ -1227,6 +1282,104 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
     return fmt__print_utf8(writer, fs, STRINGS[b], LEN[b]);
 }
 
+static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
+    char sign = 0;
+    int integer_width, fraction_width = 0;
+    unsigned long long integer, fraction;
+    bool no_fraction = false;
+    if (f < 0.0) {
+        sign = '-';
+        f = -f;
+    }
+    integer = (unsigned long long)f;
+    integer_width = fmt__unsigned_width_10(integer);
+    // TODO: macro option for fixed number of decimal digits like printf does
+    if (fs->precision > 0) {
+        // FIXME: catch too large precision values
+        double unused;
+        double f_fraction = modf(f, &unused);
+        unsigned long long d = fmt__pow(10, fs->precision);
+        fraction = (unsigned long long)(f_fraction * d);
+        fraction_width = fs->precision;
+    } else if (fs->precision == 0) {
+        no_fraction = true;
+        // TODO: remove once sure we don't accidentally use it anyways
+        fraction = (unsigned long long)-1;
+    } else {
+        double unused;
+        double f_fraction = modf(f, &unused);
+        // use an integer and multiply the float once each time to reduce inaccuracy,
+        // compared to multiplying the float by 10.0 each iteration.
+        unsigned long long d;
+        // I don't want to compile with -lm every time so we need to avoid the
+        // existing math functions :(
+        // Not sure what this means for speed but that's not the goal of this
+        // library anyways as long as it's fast enough.
+        #define fmt__round(x) ((double)(unsigned long long)(x))
+        for (d = 1; f_fraction*d != fmt__round(f_fraction*d); d *= 10) {
+            ++fraction_width;
+        }
+        #undef fmt__round
+        fraction = (unsigned long long)(f_fraction * d);
+        if (fraction == 0) {
+            fraction_width = 1;
+        }
+    }
+
+    int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width);
+    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
+
+    fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
+    const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
+    const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
+
+    int written = pad.first + pad.second;
+    if (!pad_after_sign_and_base) {
+        fmt__pad(writer, pad.first, padchar);
+    }
+    if (sign) {
+        written += writer->write_byte(writer, sign);
+    }
+    if (pad_after_sign_and_base) {
+        fmt__pad(writer, pad.first, padchar);
+    }
+    if (fs->group && false) {
+        // TODO
+    } else {
+        written += fmt__write_digits(writer, integer, integer_width, 10, "0123456789");
+    }
+    if (!no_fraction) {
+        // TODO: locale?
+        written += writer->write_byte(writer, '.');
+        written += fmt__write_digits(writer, fraction, fraction_width, 10, "0123456789");
+    }
+    fmt__pad(writer, pad.second, padchar);
+
+    return written;
+}
+
+static int fmt__print_float_exponential(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
+    int exp;
+    fmt__get_base_and_exponent(f, &f, &exp);
+    int written = fmt__print_float_decimal(writer, fs, f);
+    written += writer->write_byte(writer, 'e');
+    fs->width = 2 + (exp < 0);
+    fs->zero_pad = true;
+    fs->align = fmt_ALIGN_RIGHT;
+    fs->type = 'd';
+    if (exp < 0) {
+        written += fmt__print_int(writer, fs, -exp, '-');
+    } else {
+        written += fmt__print_int(writer, fs, exp, 0);
+    }
+    return written;
+}
+
+static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, const void *ptr) {
+    fs->type = fs->type == 'P' ? 'X' : 'x';
+    return fmt__print_int(writer, fs, (uintptr_t)ptr, 0);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Core functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -1234,6 +1387,11 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
 static _Atomic bool fmt__mutex_initialized;
 static mtx_t fmt__print_mutex;
+
+void fmt_init_threading() {
+    mtx_init(&fmt__print_mutex);
+    atexit(fmt_clean_mutex);
+}
 
 void fmt_clean_mutex() {
     if (fmt__mutex_initialized) {
@@ -1243,118 +1401,169 @@ void fmt_clean_mutex() {
 #endif
 
 static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifier, int *arg_count, int specifier_number, va_list ap) {
-    fmt_Type_Id type = va_arg(ap, fmt_Type_Id);
     if (*arg_count == 0) {
-        fprintf(stderr, "\nArguments exhausted at specifier %d\n", specifier_number);
-        exit(1);
+        fmt_panic("\nArguments exhausted at specifier {}", specifier_number);
     }
+    --*arg_count;
+    fmt_Type_Id type = va_arg(ap, fmt_Type_Id);
     fmt_Format_Specifier fs;
-    *format_specifier = fmt__parse_specifier(*format_specifier, &fs, type, specifier_number, arg_count, ap);
-    int written = 0;
     union {
-        int v_int;
-        long long v_signed;
-        unsigned long long v_unsigned;
         const char *v_string;
         const char16_t *v_string16;
         const char32_t *v_string32;
+        long long v_signed;
+        unsigned long long v_unsigned;
+        bool v_bool;
+        double v_float;
+        const void *v_pointer;
+        struct tm v_time;
     } value;
-    union {
-        int len;
-        char sign;
-    } aux;
+    int length = 0;
+    char sign = 0;
+
+    #define FMT_PARSE_FS()                                                \
+        *format_specifier = fmt__parse_specifier(                         \
+            *format_specifier, &fs, type, specifier_number, arg_count, ap \
+        )
+
+    #define FMT_TID_CASE(_tid, _v, _T, _a) \
+        case _tid: { \
+            value._v = va_arg(ap, _T); \
+            FMT_PARSE_FS(); \
+            goto _a; \
+        }
 
     switch (type) {
-    case fmt__TYPE_CHAR:
-        written = fmt__print_char(writer, &fs, va_arg(ap, int));
-        break;
+        case fmt__TYPE_STRING:
+            value.v_pointer = va_arg(ap, const char *);
+            sign = 0;
+            // we could do this after the t_string label but I'll keep it up
+            // here for consistency
+            FMT_PARSE_FS();
+            goto t_string;
+        case fmt__TYPE_STRING_16:
+            value.v_pointer = va_arg(ap, const char16_t *);
+            sign = 1;
+            FMT_PARSE_FS();
+            goto t_string;
+        case fmt__TYPE_STRING_32:
+            value.v_pointer = va_arg(ap, const char32_t *);
+            sign = 2;
+            FMT_PARSE_FS();
+            goto t_string;
 
-    case fmt__TYPE_BOOL:
-        written = fmt__print_bool(writer, &fs, va_arg(ap, int));
-        break;
-
-    case fmt__TYPE_SIGNED_CHAR:
-    case fmt__TYPE_SHORT:
-    case fmt__TYPE_INT:
-    case fmt__TYPE_UNSIGNED_CHAR:
-    case fmt__TYPE_UNSIGNED_SHORT:
-        value.v_signed = va_arg(ap, int);
-        goto do_signed;
-    case fmt__TYPE_LONG:
-        value.v_signed = va_arg(ap, long);
-        goto do_signed;
-    case fmt__TYPE_LONG_LONG:
-        value.v_signed = va_arg(ap, long long);
-    do_signed:
-        aux.sign = 0;
-        if (fs.type == 'c') {
-            written = fmt__print_char(writer, &fs, value.v_signed);
-        } else {
-            if (value.v_signed < 0) {
-                aux.sign = '-';
-                value.v_signed = -value.v_signed;
+        case fmt__TYPE_CHAR: {
+            int my_value = va_arg(ap, int);
+            if (my_value < 0) {
+                value.v_unsigned = FMT_REPLACEMENT_CHARACTER;
+            } else {
+                value.v_unsigned = my_value;
             }
-            written = fmt__print_int(writer, &fs, value.v_signed, aux.sign);
+            FMT_PARSE_FS();
+            if (fs.type == 0) {
+                fs.type = 'c';
+            }
+            goto t_unsigned;
         }
-        break;
 
-    case fmt__TYPE_UNSIGNED:
-        value.v_unsigned = va_arg(ap, unsigned);
-        goto do_unsigned;
-    case fmt__TYPE_UNSIGNED_LONG:
-        value.v_unsigned = va_arg(ap, unsigned long);
-        goto do_unsigned;
-    case fmt__TYPE_UNSIGNED_LONG_LONG:
-        value.v_unsigned = va_arg(ap, unsigned long long);
-    do_unsigned:
-        if (fs.type == 'c') {
-            written = fmt__print_char(writer, &fs, value.v_unsigned);
-        } else {
-            written = fmt__print_int(writer, &fs, value.v_unsigned, 0);
-        }
-        break;
+        // Note: cases reading differnt types from the variadic arguments than
+        // their type ID specifier are not errors but those values are promoted
+        // to the used type when passed through `...`.
 
-    case fmt__TYPE_STRING:
-        value.v_string = va_arg(ap, const char *);
-        if (fs.precision < 0) {
-            aux.len = strlen(value.v_string);
-        } else {
-            aux.len = fmt__utf8_chars_len(value.v_string, fs.precision);
-        }
-        written = fmt__print_utf8(writer, &fs, value.v_string, aux.len);
-        break;
+        FMT_TID_CASE(fmt__TYPE_UNSIGNED_CHAR, v_unsigned, unsigned, t_unsigned)
+        FMT_TID_CASE(fmt__TYPE_UNSIGNED_SHORT, v_unsigned, unsigned, t_unsigned)
+        FMT_TID_CASE(fmt__TYPE_UNSIGNED, v_unsigned, unsigned, t_unsigned)
+        FMT_TID_CASE(fmt__TYPE_UNSIGNED_LONG, v_unsigned, unsigned long, t_unsigned)
+        FMT_TID_CASE(fmt__TYPE_UNSIGNED_LONG_LONG, v_unsigned, unsigned long long, t_unsigned)
 
+        FMT_TID_CASE(fmt__TYPE_SIGNED_CHAR, v_signed, int, t_signed)
+        FMT_TID_CASE(fmt__TYPE_SHORT, v_signed, int, t_signed)
+        FMT_TID_CASE(fmt__TYPE_INT, v_signed, int, t_signed)
+        FMT_TID_CASE(fmt__TYPE_LONG, v_signed, long, t_signed)
+        FMT_TID_CASE(fmt__TYPE_LONG_LONG, v_signed, long long, t_signed)
 
-    case fmt__TYPE_STRING_16:
-        value.v_string16 = va_arg(ap, const char16_t *);
-        if (fs.precision < 0) {
-            aux.len = fmt__utf16_strlen(value.v_string16);
-        } else {
-            aux.len = fmt__utf16_chars_len(value.v_string16, fs.precision);
-        }
-        written = fmt__print_utf16(writer, &fs, value.v_string16, aux.len);
-        break;
+        FMT_TID_CASE(fmt__TYPE_BOOL, v_bool, int, t_bool)
 
-    case fmt__TYPE_STRING_32:
-        value.v_string32 = va_arg(ap, const char32_t *);
-        if (fs.precision < 0) {
-            aux.len = fmt__utf32_strlen(value.v_string32);
-        } else {
-            aux.len = fmt__utf32_chars_len(value.v_string32, fs.precision);
-        }
-        written = fmt__print_utf32(writer, &fs, value.v_string32, aux.len);
-        break;
+        FMT_TID_CASE(fmt__TYPE_POINTER, v_pointer, const void *, t_pointer);
 
-    case fmt__TYPE_UNKNOWN:
-        fprintf(stderr, "\nUnknown type for specifier %d\n", specifier_number);
-        exit(1);
+        FMT_TID_CASE(fmt__TYPE_FLOAT, v_float, double, t_float)
+        FMT_TID_CASE(fmt__TYPE_DOUBLE, v_float, double, t_float)
 
-    default:
-        writer->write_str(writer, "[UNIMPLEMENTED]");
-        break;
+        case fmt__TYPE_UNKNOWN:
+            // Unknown is also used for all pointers we don't specify an explicit
+            // type id for so we don't need to cast to a void pointer every time.
+            // This is of course less safe as it could also not be a pointer but
+            // that would be the users fault.
+            if ((*format_specifier)[1] == 'p' || (*format_specifier)[1] == 'P') {
+                value.v_pointer = va_arg(ap, const void *);
+                FMT_PARSE_FS();
+                goto t_pointer;
+            }
+            fmt_panic("Unimplemented argument type at specifier {}", specifier_number);
     }
-    ++*arg_count;
-    return written;
+
+    #undef FMT_PARSE_FS
+    #undef FMT_TID_CASE
+
+    fmt_panic("unreachable");
+
+t_string:
+    // All string functions have the same general interface and just differ in
+    // in the type of pointer the functions take but since they are all pointers
+    // we can just cast them to be void pointers and choose the functions based
+    // on the kind of string determined in the switch above.
+    if (fs.type == 'p' || fs.type == 'P') {
+        goto t_pointer;
+    } else {
+        static size_t (*STRLEN_TABLE[])(const void *) = {
+            (size_t (*)(const void *))strlen,
+            (size_t (*)(const void *))fmt__utf16_strlen,
+            (size_t (*)(const void *))fmt__utf32_strlen,
+        };
+        static int (*CHARS_LEN_TABLE[])(const void *, int) = {
+            (int (*)(const void *, int))fmt__utf8_chars_len,
+            (int (*)(const void *, int))fmt__utf16_chars_len,
+            (int (*)(const void *, int))fmt__utf32_chars_len,
+        };
+        static int (*PRINT_TABLE[])(fmt_Writer *, fmt_Format_Specifier *, const void *, int) = {
+            (int (*)(fmt_Writer *, fmt_Format_Specifier *, const void *, int))fmt__print_utf8,
+            (int (*)(fmt_Writer *, fmt_Format_Specifier *, const void *, int))fmt__print_utf16,
+            (int (*)(fmt_Writer *, fmt_Format_Specifier *, const void *, int))fmt__print_utf32,
+        };
+        if (fs.precision < 0) {
+            length = STRLEN_TABLE[(int)sign](value.v_pointer);
+        } else {
+            length = CHARS_LEN_TABLE[(int)sign](value.v_pointer, fs.precision);
+        }
+        return PRINT_TABLE[(int)sign](writer, &fs, value.v_pointer, length);
+    }
+
+t_signed:
+    if (value.v_signed < 0) {
+        sign = '-';
+        value.v_unsigned = -value.v_signed;
+    }
+    /* fallthrough */
+
+t_unsigned:
+    if (fs.type == 'c') {
+        return fmt__print_char(writer, &fs, value.v_unsigned);
+    } else {
+        return fmt__print_int(writer, &fs, value.v_unsigned, sign);
+    }
+
+t_pointer:
+    return fmt__print_pointer(writer, &fs, value.v_pointer);
+
+t_float:
+    if (fs.type == 'e' || fs.type == 'E') {
+        return fmt__print_float_exponential(writer, &fs, value.v_float);
+    } else {
+        return fmt__print_float_decimal(writer, &fs, value.v_float);
+    }
+
+t_bool:
+    return fmt__print_bool(writer, &fs, value.v_bool);
 }
 
 int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_count, ...) {
@@ -1404,6 +1613,27 @@ int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va
         }
     }
     return written;
+}
+
+// We need a 2nd function for this so we can use variadic arguments
+static void fmt__panic_loc(fmt_Writer *writer, ...) {
+    va_list ap;
+    va_start(ap, writer);
+    fmt_implementation(writer, "{}:{}: ", 2, ap);
+    va_end(ap);
+}
+
+void fmt__panic(const char *file, int line, const char *format, int arg_count, ...) {
+    fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stderr);
+    fmt__panic_loc(writer, fmt__TYPE_STRING, file, fmt__TYPE_INT, line);
+    va_list ap;
+    va_start(ap, arg_count);
+    fmt_implementation(writer, format, arg_count, ap);
+    va_end(ap);
+    if (format[strlen(format) - 1] != '\n') {
+        writer->write_byte(writer, '\n');
+    }
+    abort();
 }
 
 #endif /* FMT_IMPLEMENTATION */

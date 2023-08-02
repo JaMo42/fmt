@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS = -Wall -Wextra -std=c11
+CFLAGS ?= -Wall -Wextra -std=c11
 
 ifdef $(RELEASE)
 	CFLAGS += -march=native -mtune=native -O3
@@ -9,6 +9,10 @@ endif
 
 test: test.c fmt.h
 	$(CC) $(CFLAGS) -o $@ $<
+
+.PHONY: run
+run: test
+	@./test
 
 .PHONY: vg
 vg: test

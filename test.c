@@ -93,17 +93,44 @@ su_module_d(basic_printing, "basic printing", {
         expect("안녕", "{}", U"안녕");
     })
 
+    su_test("booleans", {
+        bool t = true;
+        bool f = false;
+        #ifdef FMT_BOOL_YES_NO
+        expect("yes", "{}", t);
+        expect("no", "{}", f);
+        #else
+        expect("true", "{}", t);
+        expect("false", "{}", f);
+        #endif
+    })
+
     su_test("integers", {
+        expect("0", "{}", 0);
         expect("123", "{}", 123);
         expect("-123", "{}", -123);
         expect("123abc", "{x}", 0x123abc);
         expect("-123abc", "{x}", -0x123abc);
-        expect("123ABC", "{X}", 0x123ABC);
-        expect("-123ABC", "{X}", -0x123ABC);
+        expect("123ABC", "{X}", 0x123abc);
+        expect("-123ABC", "{X}", -0x123abc);
         expect("11011", "{b}", 0b11011);
         expect("-11011", "{b}", -0b11011);
         expect("644", "{o}", 0644);
         expect("-644", "{o}", -0644);
+    })
+
+    su_test("floats", {
+        expect("3.141", "{}", 3.141);
+    })
+
+    su_test("pointers", {
+        const void *p = (void *)0x123;
+        const char *s = (char *)0x123;
+        expect("123", "{}", p);
+        expect("123", "{p}", s);
+        expect("abc", "{}", (void*)0xabc);
+        expect("ABC", "{P:}", (void*)0xabc);
+        expect("ABC", "{P:}", (char*)0xabc);
     })
 })
 
@@ -113,11 +140,16 @@ su_module(formatting, {
         expect("Hello    ", "{:<9}", "Hello");
         expect("    Hello", "{:>9}", "Hello");
         expect("  Hello  ", "{:^9}", "Hello");
+        expect("  a  ", "{:^5}", (char)'a');
         expect("  123  ", "{:^7}", 123);
         expect("-   123", "{:=7}", -123);
+        expect("  true  ", "{:^8}", (bool)true);
+        expect("  2.0  ", "{:^7}", 2.0);
     })
 
     su_test("precision", {
+        expect("3.141000", "{:.6}", 3.141);
+        expect("3", "{:.0}", 3);
         expect("java", "{:.4}", "javascript");
         expect("안녕", "{:.2}", "안녕하세요");
         // Booleans are treated as strings
