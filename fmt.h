@@ -1663,18 +1663,15 @@ static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, cons
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
-static _Atomic bool fmt__mutex_initialized;
 static mtx_t fmt__print_mutex;
 
-void fmt_init_threading() {
-    mtx_init(&fmt__print_mutex);
-    atexit(fmt_clean_mutex);
+static void fmt_clean_mutex() {
+    mtx_destroy(&fmt__print_mutex);
 }
 
-void fmt_clean_mutex() {
-    if (fmt__mutex_initialized) {
-        mtx_destroy(&fmt__print_mutex);
-    }
+static void fmt_init_threading() {
+    mtx_init(&fmt__print_mutex, mtx_plain);
+    atexit(fmt_clean_mutex);
 }
 #endif
 
@@ -1854,9 +1851,6 @@ int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_count, ...)
 
 int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...) {
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
-    if (!fmt__mutex_initialized) {
-        mtx_init(&fmt__print_mutex, mtx_plain);
-    }
     mtx_lock(&fmt__print_mutex);
 #endif
     fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stream);
