@@ -49,6 +49,10 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_UPPER_NAN "NAN"
 #endif
 
+#ifndef FMT_DEFAULT_FLOAT_PRECISION
+#  define FMT_DEFAULT_FLOAT_PRECISION 3
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
 ////////////////////////////////////////////////////////////////////////////////
@@ -1569,6 +1573,9 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     bool no_fraction;
     int fraction_width;
     const int integer_width = fmt__float_integer_width(f);
+    if (fs->precision < 0) {
+        fs->precision = FMT_DEFAULT_FLOAT_PRECISION;
+    }
     if (fs->precision == 0) {
         no_fraction = true;
     } else {

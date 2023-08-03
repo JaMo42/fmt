@@ -2,6 +2,7 @@
 #include <icecream.h>
 #define FMT_IMPLEMENTATION
 //#define FMT_BIN_GROUP_NIBBLES
+#define FMT_DEFAULT_FLOAT_PRECISION -1
 #include "fmt.h"
 
 static bool expect_impl(int source_line, const char *expected, const char *fmt, int arg_count, ...) {
