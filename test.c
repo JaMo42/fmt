@@ -208,6 +208,10 @@ su_module_d(basic_printing, "basic printing", {
         expect(FMT_UPPER_INF, "{F}", INFINITY);
         expect(FMT_LOWER_NAN, "{}", NAN);
         expect(FMT_UPPER_NAN, "{F}", NAN);
+        expect("-"FMT_LOWER_INF, "{}", -INFINITY);
+        expect("-"FMT_UPPER_INF, "{F}", -INFINITY);
+        expect("-"FMT_LOWER_NAN, "{}", -NAN);
+        expect("-"FMT_UPPER_NAN, "{F}", -NAN);
         expect(FMT_LOWER_INF, "{}", HUGE_VAL);
         expect("1.0e00", "{e}", 1.0);
         expect("1.0e03", "{e}", 1000.0);

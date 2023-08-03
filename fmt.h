@@ -42,7 +42,7 @@ typedef uint_least8_t fmt_char8_t;
 #endif
 
 #ifndef FMT_LOWER_NAN
-#  define FMT_LOWER_NAN "NaN"
+#  define FMT_LOWER_NAN "nan"
 #endif
 
 #ifndef FMT_UPPER_NAN
@@ -1559,16 +1559,26 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
     return fmt__print_utf8(writer, fs, STRINGS[b], LEN[b]);
 }
 
-#define FMT__FLOAT_SPECIAL_CASES()                                                   \
-    do {                                                                             \
-        if (isinf(f)) {                                                              \
-            const char *const s = isupper(fs->type) ? FMT_UPPER_INF : FMT_LOWER_INF; \
-            return fmt__print_utf8(writer, fs, s, strlen(s));                        \
-        }                                                                            \
-        if (isnan(f)) {                                                              \
-            const char *const s = isupper(fs->type) ? FMT_UPPER_NAN : FMT_LOWER_NAN; \
-            return fmt__print_utf8(writer, fs, s, strlen(s));                        \
-        }                                                                            \
+#define FMT__FLOAT_SPECIAL_CASES()                                                       \
+    do {                                                                                 \
+        if (isinf(f)) {                                                                  \
+            const char *const s = isupper(fs->type) ? ""FMT_UPPER_INF : ""FMT_LOWER_INF; \
+            int written = 0;                                                             \
+            if (signbit(f)) {                                                            \
+                written += writer->write_byte(writer, '-');                              \
+            }                                                                            \
+            written += fmt__print_utf8(writer, fs, s, strlen(s));                        \
+            return written;                                                              \
+        }                                                                                \
+        if (isnan(f)) {                                                                  \
+            const char *const s = isupper(fs->type) ? ""FMT_UPPER_NAN : ""FMT_LOWER_NAN; \
+            int written = 0;                                                             \
+            if (signbit(f)) {                                                            \
+                written += writer->write_byte(writer, '-');                              \
+            }                                                                            \
+            written += fmt__print_utf8(writer, fs, s, strlen(s));                        \
+            return written;                                                              \
+        }                                                                                \
     } while(0)
 
 static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
