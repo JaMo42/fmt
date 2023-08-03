@@ -49,9 +49,17 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_UPPER_NAN "NAN"
 #endif
 
+// https://stackoverflow.com/a/48540034
+#if defined(FMT_DEFAULT_FLOAT_PRECISION) \
+    && ((0 - FMT_DEFAULT_FLOAT_PRECISION - 1) == 1 \
+    && (FMT_DEFAULT_FLOAT_PRECISION + 0) != -2)
+#  error "FMT_DEFAULT_FLOAT_PRECISION is empty, reverting to default"
+#  undef FMT_DEFAULT_FLOAT_PRECISION
+#endif
 #ifndef FMT_DEFAULT_FLOAT_PRECISION
 #  define FMT_DEFAULT_FLOAT_PRECISION 3
 #endif
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
@@ -1584,6 +1592,10 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
             fraction_width = fmt__float_fraction_width(f);
         } else {
             fraction_width = fs->precision;
+            if (fraction_width < 20) {
+                const double p = fmt__pow10(fraction_width);
+                f = round(f * p) / p;
+            }
         }
     }
     const char32_t groupchar = fs->group;
@@ -1611,9 +1623,10 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
         double unused, fraction = modf(f, &unused);
         written += writer->write_byte(writer, '.');
         if (fraction_width < 20) {
-            written += fmt__write_digits_10(writer, (uint64_t)(fraction * fmt__pow10(fraction_width)), fraction_width);
+            const uint64_t as_int = ceil(fraction * fmt__pow10(fraction_width));
+            written += fmt__write_digits_10(writer, as_int, fraction_width);
         } else {
-           written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
+            written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
         }
     }
     fmt__pad(writer, pad.second, padchar);
