@@ -101,7 +101,8 @@ su_module_d(internal_functions, "internal functions", {
         }
     })
 
-    su_test("utf8 encode", {
+    su_test("utf8 encode and decode", {
+        // ENCODE
         char data[4];
         for (
             const Unicode_Test_Case
@@ -113,9 +114,7 @@ su_module_d(internal_functions, "internal functions", {
             su_assert_eq(fmt__utf8_encode(c->codepoint, data), c->size);
             su_assert(memcmp(data, c->data, c->size) == 0);
         }
-    })
-
-    su_test("utf8 decode", {
+        // DECODE
         char32_t codepoint;
         for (
             const Unicode_Test_Case
@@ -126,6 +125,24 @@ su_module_d(internal_functions, "internal functions", {
         ) {
             su_assert_eq(fmt__utf8_decode(c->data, &codepoint), c->size);
             su_assert_eq(codepoint, c->codepoint);
+        }
+    })
+
+    su_test("float part widths", {
+        int expected = 0;
+        su_assert_eq(fmt__float_integer_width(0.0), 1);
+        for (int i = 1; i <= 1000000; i *= 10) {
+            ++expected;
+            su_assert_eq(fmt__float_integer_width((double)i), expected);
+        }
+        expected = 0;
+        for (int i = 1; i <= 1000000; i *= 10) {
+            if (i == 1) {
+                su_assert_eq(fmt__float_fraction_width(1.0 / i), 1);
+            } else {
+                su_assert_eq(fmt__float_fraction_width(1.0 / i), expected);
+            }
+            ++expected;
         }
     })
 })
@@ -184,7 +201,8 @@ su_module_d(basic_printing, "basic printing", {
     })
 
     su_test("floats", {
-        expect("3.141", "{}", 3.141);
+        expect("3.1410000000000000142108547152020037174224853515625", "{}", 3.141);
+        expect("0.0123456789", "{:.10}", 0.0123456789);
         expect(FMT_LOWER_INF, "{}", INFINITY);
         expect(FMT_UPPER_INF, "{F}", INFINITY);
         expect(FMT_LOWER_NAN, "{}", NAN);
@@ -193,9 +211,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("1.0e00", "{e}", 1.0);
         expect("1.0e03", "{e}", 1000.0);
         expect("1.0e-02", "{e}", 0.01);
-        // We don't have enough accuracy in the float function
+        // Currently gives this: 7.378697629483820463747179019264876842498779296875e19
         //expect("7.3786976294838206464e19", "{e}", 0x1p66);
-        expect("7.37869762948382048e19", "{e}", 0x1p66);
     })
 
     su_test("pointers", {

@@ -1174,11 +1174,7 @@ FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 4,"00100111");
 FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 8,"00100111");
 #endif
 
-FMT_DEFINE_WRITE_DIGITS(
-    fmt__write_digits_10,
-    100,
-    20,
-    3,
+static const char *fmt__DECIMAL_DIGIT_PAIRS =
     "00102030405060708090"
     "01112131415161718191"
     "02122232425262728292"
@@ -1188,7 +1184,14 @@ FMT_DEFINE_WRITE_DIGITS(
     "06162636465666768696"
     "07172737475767778797"
     "08182838485868788898"
-    "09192939495969798999"
+    "09192939495969798999";
+
+FMT_DEFINE_WRITE_DIGITS(
+    fmt__write_digits_10,
+    100,
+    20,
+    3,
+    fmt__DECIMAL_DIGIT_PAIRS
 );
 
 FMT_DEFINE_WRITE_DIGITS(
@@ -1287,19 +1290,113 @@ static const fmt_Base* fmt__get_base(char type) {
     }
 }
 
-static unsigned long long fmt__pow(unsigned long long base, unsigned long long exp) {
-    // https://stackoverflow.com/a/101613
-    unsigned long long result = 1;
-    for (;;)
-    {
-        if (exp & 1)
-            result *= base;
-        exp >>= 1;
-        if (!exp)
-            break;
-        base *= base;
+////////////////////////////////////////////////////////////////////////////////
+// Floating point hell
+////////////////////////////////////////////////////////////////////////////////
+
+/// Returns the display width of the integer part of a floating point number.
+static int fmt__float_integer_width(double f) {
+    if (f < 10.0) {
+        return 1;
     }
-    return result;
+    int width = 1;
+    while (f >= 10.0) {
+        ++width;
+        f /= 10.0;
+    }
+    return width;
+}
+
+/// Returns the display width of the fraction part of a floating point number.
+static int fmt__float_fraction_width(double f) {
+    double unused;
+    double fraction = f;
+    int width = 0;
+    for (;;) {
+        fraction = modf(fraction, &unused);
+        if (fraction == (double)(int)fraction) {
+            break;
+        }
+        fraction *= 10.0;
+        ++width;
+    }
+    // no fraction, we want a single zero so width 1
+    if (!width) {
+        ++width;
+    };
+    return width;
+}
+
+static int fmt__write_float_integer_digits(
+    fmt_Writer *writer,
+    double f,
+    int length,
+    char32_t groupchar,
+    int group_interval
+) {
+    if (f <= (double)UINT64_MAX) {
+        if (group_interval) {
+            return fmt__write_digits_10_grouped(writer, (uint64_t)f, length, groupchar);
+        } else {
+            return fmt__write_digits_10(writer, (uint64_t)f, length);
+        }
+    }
+    double div;
+    int digit;
+    int group_at = length % (group_interval + 1);
+    int written = length;
+    while (length--) {
+        div = pow(10.0, length);
+        digit = (int)(f / div) % 10;
+        writer->write_byte(writer, '0' + digit);
+        // We don't check if group_interval is 0 here but since group_at starts
+        // at 0 in that case we need to overflow it and then go all the way
+        // back to 0 until it matters, I'm not sure if that can actually happen
+        // but I will just leave it like this for now.
+        // TODO: verify it
+        if (group_at-- == 0) {
+            writer->write_byte(writer, groupchar);
+            ++written;
+            group_at = group_interval;
+        }
+    }
+    return written;
+}
+
+static int fmt__write_float_fraction_digits(
+    fmt_Writer *writer,
+    double f,
+    int length
+) {
+    char buf [32];
+    int pairindex;
+    const char *bufend = buf + sizeof(buf);
+    char *p = buf;
+    int written = 0;
+    double unused;
+    if (length % 2) {
+        f *= 10.0;
+        writer->write_byte(writer, '0' + (int)f % 10);
+        ++written;
+        f -= (int)f;
+        --length;
+    }
+    while (length) {
+        length -= 2;
+        pairindex = (int)(f * 100.0) * 2;
+        f = modf(f * 100.0, &unused);
+        p[0] = fmt__DECIMAL_DIGIT_PAIRS[pairindex + 1];
+        p[1] = fmt__DECIMAL_DIGIT_PAIRS[pairindex];
+        p += 2;
+        if (p == bufend) {
+            written += writer->write_data(writer, buf, 32);
+            p = buf;
+        }
+    }
+    if (p != buf) {
+        written += writer->write_data(writer, buf, p - buf);
+    }
+    return written;
 }
 
 static void fmt__get_base_and_exponent(double f, double *base, int *exponent) {
@@ -1327,6 +1424,15 @@ static void fmt__get_base_and_exponent(double f, double *base, int *exponent) {
     }
     *base = f * negate;
     *exponent = exp;
+}
+
+/// Returns 10^exp.  exp may not exceed 19.
+static double fmt__pow10(int exp) {
+    static const double TABLE[] = {
+        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
+        1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19,
+    };
+    return TABLE[exp];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1456,51 +1562,28 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
 static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
     FMT__FLOAT_SPECIAL_CASES();
     char sign = 0;
-    int integer_width, fraction_width = 0;
-    unsigned long long integer, fraction;
-    bool no_fraction = false;
     if (f < 0.0) {
         sign = '-';
         f = -f;
     }
-    integer = (unsigned long long)f;
-    integer_width = fmt__unsigned_width_10(integer);
-    // TODO: macro option for fixed number of decimal digits like printf does
-    if (fs->precision > 0) {
-        // FIXME: catch too large precision values
-        double unused;
-        double f_fraction = modf(f, &unused);
-        unsigned long long d = fmt__pow(10, fs->precision);
-        fraction = (unsigned long long)(f_fraction * d);
-        fraction_width = fs->precision;
-    } else if (fs->precision == 0) {
+    bool no_fraction;
+    int fraction_width;
+    const int integer_width = fmt__float_integer_width(f);
+    if (fs->precision == 0) {
         no_fraction = true;
-        // TODO: remove once sure we don't accidentally use it anyways
-        fraction = (unsigned long long)-1;
     } else {
-        double unused;
-        double f_fraction = modf(f, &unused);
-        // use an integer and multiply the float once each time to reduce inaccuracy,
-        // compared to multiplying the float by 10.0 each iteration.
-        unsigned long long d;
-        // I don't want to compile with -lm every time so we need to avoid the
-        // existing math functions :(
-        // Not sure what this means for speed but that's not the goal of this
-        // library anyways as long as it's fast enough.
-        #define fmt__round(x) ((double)(unsigned long long)(x))
-        for (d = 1; f_fraction*d != fmt__round(f_fraction*d); d *= 10) {
-            ++fraction_width;
-        }
-        #undef fmt__round
-        fraction = (unsigned long long)(f_fraction * d);
-        if (fraction == 0) {
-            fraction_width = 1;
+        no_fraction = false;
+        if (fs->precision < 0) {
+            fraction_width = fmt__float_fraction_width(f);
+        } else {
+            fraction_width = fs->precision;
         }
     }
+    const char32_t groupchar = fs->group;
+    const int group_interval = fs->group ? 3 : 0;
 
-    int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width);
-    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
-
+    const int total_width = !!sign + integer_width + 1 + fraction_width;
+    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
     fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
     const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
     const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
@@ -1515,18 +1598,18 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     if (pad_after_sign_and_base) {
         fmt__pad(writer, pad.first, padchar);
     }
-    if (fs->group && false) {
-        // TODO
-    } else {
-        written += fmt__write_digits_10(writer, integer, integer_width);
-    }
+    written += fmt__write_float_integer_digits(writer, f, integer_width, groupchar, group_interval);
     if (!no_fraction) {
         // TODO: locale?
+        double unused, fraction = modf(f, &unused);
         written += writer->write_byte(writer, '.');
-        written += fmt__write_digits_10(writer, fraction, fraction_width);
+        if (fraction_width < 20) {
+            written += fmt__write_digits_10(writer, (uint64_t)(fraction * fmt__pow10(fraction_width)), fraction_width);
+        } else {
+           written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
+        }
     }
     fmt__pad(writer, pad.second, padchar);
-
     return written;
 }
 
