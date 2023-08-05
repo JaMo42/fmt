@@ -999,6 +999,7 @@ static const char * fmt__parse_specifier(
         ++format_specifier;
     }
     if (*format_specifier == '0') {
+        out->align = fmt_ALIGN_RIGHT;
         out->zero_pad = true;
         ++format_specifier;
     }
