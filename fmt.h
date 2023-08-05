@@ -1147,15 +1147,6 @@ static fmt_Int_Pair fmt__distribute_padding(int amount, fmt_Alignment align) {
     return result;
 }
 
-static void fmt__reverse(char *buf, int len) {
-    const int mid = len / 2;
-    for (int i = 0; i < mid; ++i) {
-        char t = buf[i];
-        buf[i] = buf[len - 1 - i];
-        buf[len - 1 - i] = t;
-    }
-}
-
 static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char32_t groupchar, int interval) {
     char grouputf8[4];
     const int grouplen = fmt__utf8_encode(groupchar, grouputf8);
@@ -1180,58 +1171,55 @@ static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char
 
 #define FMT_DEFINE_WRITE_DIGITS(_name, _div, _buf_size, _grouping_interval, _lookup_string) \
     static int _name(fmt_Writer *writer, uint64_t n, int len) { \
-        /* Print 2 digits at a time using this lookup string.  Doing 3 at once
-           was actually slightly slower on my machine.  For numbers with an
-           uneven amount of digits this will just write an extra `0` into the
-           buffer but since we use the previously calculated length for the
-           reversing and writing that will just be discarded. */ \
+        if (n == 0) { \
+            return writer->write_byte(writer, '0'); \
+        } \
         const char *digitpairs = _lookup_string; \
-        /* Initialize the buffer with one zero since the while loop will never
-           run if `n` is zero. */ \
-        char buf[_buf_size] = {'0',}; \
-        char *p = buf; \
+        char buf[_buf_size]; \
+        char *p = buf + len - 2; \
         int idx; \
         while (n) { \
             idx = (n % _div) * 2; \
             memcpy(p, digitpairs + idx, 2); \
-            p += 2; \
+            p -= 2; \
             n /= _div; \
         } \
-        fmt__reverse(buf, len); \
         return writer->write_data(writer, buf, len); \
     } \
     static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, char32_t groupchar) { \
+        if (n == 0) { \
+            return writer->write_byte(writer, '0'); \
+        } \
         const char *digitpairs = _lookup_string; \
-        char buf[_buf_size] = {'0'}; \
-        char *p = buf; \
+        char buf[_buf_size]; \
+        char *p = buf + len - 2; \
         int idx; \
         while (n) { \
             idx = (n % _div) * 2; \
             memcpy(p, digitpairs + idx, 2); \
-            p += 2; \
+            p -= 2; \
             n /= _div; \
         } \
-        fmt__reverse(buf, len); \
         return fmt__write_grouped(writer, buf, len, groupchar, _grouping_interval); \
     }
 
 #ifdef FMT_BIN_GROUP_NIBBLES
-FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 4,"00100111");
+FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 4,"00011011");
 #else
-FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 8,"00100111");
+FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 8,"00011011");
 #endif
 
 static const char *fmt__DECIMAL_DIGIT_PAIRS =
-    "00102030405060708090"
-    "01112131415161718191"
-    "02122232425262728292"
-    "03132333435363738393"
-    "04142434445464748494"
-    "05152535455565758595"
-    "06162636465666768696"
-    "07172737475767778797"
-    "08182838485868788898"
-    "09192939495969798999";
+    "00010203040506070809"
+    "10111213141516171819"
+    "20212223242526272829"
+    "30313233343536373839"
+    "40414243444546474849"
+    "50515253545556575859"
+    "60616263646566676869"
+    "70717273747576777879"
+    "80818283848586878889"
+    "90919293949596979899";
 
 FMT_DEFINE_WRITE_DIGITS(
     fmt__write_digits_10,
@@ -1247,14 +1235,14 @@ FMT_DEFINE_WRITE_DIGITS(
     24,
     // Python uses 4, Rust doesn't have thousands separators, printf also uses 3.
     3,
-    "0010203040506070"
-    "0111213141516171"
-    "0212223242526272"
-    "0313233343536373"
-    "0414243444546474"
-    "0515253545556575"
-    "0616263646566676"
-    "0717273747576777"
+    "0001020304050607"
+    "1011121314151617"
+    "2021222324252627"
+    "3031323334353637"
+    "4041424344454647"
+    "5051525354555657"
+    "6061626364656667"
+    "7071727374757677"
 );
 
 FMT_DEFINE_WRITE_DIGITS(
@@ -1262,22 +1250,22 @@ FMT_DEFINE_WRITE_DIGITS(
     256,
     16,
     4,
-    "00102030405060708090a0b0c0d0e0f0"
-    "01112131415161718191a1b1c1d1e1f1"
-    "02122232425262728292a2b2c2d2e2f2"
-    "03132333435363738393a3b3c3d3e3f3"
-    "04142434445464748494a4b4c4d4e4f4"
-    "05152535455565758595a5b5c5d5e5f5"
-    "06162636465666768696a6b6c6d6e6f6"
-    "07172737475767778797a7b7c7d7e7f7"
-    "08182838485868788898a8b8c8d8e8f8"
-    "09192939495969798999a9b9c9d9e9f9"
-    "0a1a2a3a4a5a6a7a8a9aaabacadaeafa"
-    "0b1b2b3b4b5b6b7b8b9babbbcbdbebfb"
-    "0c1c2c3c4c5c6c7c8c9cacbcccdcecfc"
-    "0d1d2d3d4d5d6d7d8d9dadbdcdddedfd"
-    "0e1e2e3e4e5e6e7e8e9eaebecedeeefe"
-    "0f1f2f3f4f5f6f7f8f9fafbfcfdfefff"
+    "000102030405060708090a0b0c0d0e0f"
+    "101112131415161718191a1b1c1d1e1f"
+    "202122232425262728292a2b2c2d2e2f"
+    "303132333435363738393a3b3c3d3e3f"
+    "404142434445464748494a4b4c4d4e4f"
+    "505152535455565758595a5b5c5d5e5f"
+    "606162636465666768696a6b6c6d6e6f"
+    "707172737475767778797a7b7c7d7e7f"
+    "808182838485868788898a8b8c8d8e8f"
+    "909192939495969798999a9b9c9d9e9f"
+    "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+    "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+    "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+    "d0d1d2d3d4d5d6d7d8d9dadbdcdddedf"
+    "e0e1e2e3e4e5e6e7e8e9eaebecedeeef"
+    "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
 );
 
 FMT_DEFINE_WRITE_DIGITS(
@@ -1285,22 +1273,22 @@ FMT_DEFINE_WRITE_DIGITS(
     256,
     16,
     4,
-    "00102030405060708090A0B0C0D0E0F0"
-    "01112131415161718191A1B1C1D1E1F1"
-    "02122232425262728292A2B2C2D2E2F2"
-    "03132333435363738393A3B3C3D3E3F3"
-    "04142434445464748494A4B4C4D4E4F4"
-    "05152535455565758595A5B5C5D5E5F5"
-    "06162636465666768696A6B6C6D6E6F6"
-    "07172737475767778797A7B7C7D7E7F7"
-    "08182838485868788898A8B8C8D8E8F8"
-    "09192939495969798999A9B9C9D9E9F9"
-    "0A1A2A3A4A5A6A7A8A9AAABACADAEAFA"
-    "0B1B2B3B4B5B6B7B8B9BABBBCBDBEBFB"
-    "0C1C2C3C4C5C6C7C8C9CACBCCCDCECFC"
-    "0D1D2D3D4D5D6D7D8D9DADBDCDDDEDFD"
-    "0E1E2E3E4E5E6E7E8E9EAEBECEDEEEFE"
-    "0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFFF"
+    "000102030405060708090A0B0C0D0E0F"
+    "101112131415161718191A1B1C1D1E1F"
+    "202122232425262728292A2B2C2D2E2F"
+    "303132333435363738393A3B3C3D3E3F"
+    "404142434445464748494A4B4C4D4E4F"
+    "505152535455565758595A5B5C5D5E5F"
+    "606162636465666768696A6B6C6D6E6F"
+    "707172737475767778797A7B7C7D7E7F"
+    "808182838485868788898A8B8C8D8E8F"
+    "909192939495969798999A9B9C9D9E9F"
+    "A0A1A2A3A4A5A6A7A8A9AAABACADAEAF"
+    "B0B1B2B3B4B5B6B7B8B9BABBBCBDBEBF"
+    "C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF"
+    "D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF"
+    "E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEF"
+    "F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF"
 );
 
 #undef FMT_DEFINE_WRITE_DIGITS
@@ -1432,8 +1420,7 @@ static int fmt__write_float_fraction_digits(
         length -= 2;
         pairindex = (int)(f * 100.0) * 2;
         f = modf(f * 100.0, &unused);
-        p[0] = fmt__DECIMAL_DIGIT_PAIRS[pairindex + 1];
-        p[1] = fmt__DECIMAL_DIGIT_PAIRS[pairindex];
+        memcpy(p, fmt__DECIMAL_DIGIT_PAIRS + pairindex, 2);
         p += 2;
         if (p == bufend) {
             written += writer->write_data(writer, buf, 32);
@@ -1631,6 +1618,7 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     }
     if (fs->precision == 0) {
         no_fraction = true;
+        fraction_width = 0;
     } else {
         no_fraction = false;
         if (fs->precision < 0) {
@@ -1646,7 +1634,7 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     const char32_t groupchar = fs->group;
     const int group_interval = fs->group ? 3 : 0;
 
-    const int total_width = !!sign + integer_width + 1 + fraction_width;
+    const int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width);
     const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
     fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
     const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
