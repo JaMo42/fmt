@@ -1589,6 +1589,7 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
             if (signbit(f)) {                                                            \
                 written += writer->write_byte(writer, '-');                              \
             }                                                                            \
+            fs->precision = -1;                                                          \
             written += fmt__print_utf8(writer, fs, s, strlen(s));                        \
             return written;                                                              \
         }                                                                                \
@@ -1598,6 +1599,7 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
             if (signbit(f)) {                                                            \
                 written += writer->write_byte(writer, '-');                              \
             }                                                                            \
+            fs->precision = -1;                                                          \
             written += fmt__print_utf8(writer, fs, s, strlen(s));                        \
             return written;                                                              \
         }                                                                                \
