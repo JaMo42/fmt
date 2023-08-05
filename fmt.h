@@ -60,7 +60,6 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_DEFAULT_FLOAT_PRECISION 3
 #endif
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
 ////////////////////////////////////////////////////////////////////////////////
@@ -158,6 +157,7 @@ typedef uint_least8_t fmt_char8_t;
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef enum {
+    fmt__TYPE_UNKNOWN,
     fmt__TYPE_CHAR,
     fmt__TYPE_SIGNED_CHAR,
     fmt__TYPE_SHORT,
@@ -176,7 +176,6 @@ typedef enum {
     fmt__TYPE_STRING_16,
     fmt__TYPE_STRING_32,
     fmt__TYPE_POINTER,
-    fmt__TYPE_UNKNOWN,
 } fmt_Type_Id;
 
 #ifdef _MSC_VER
@@ -258,12 +257,6 @@ typedef struct {
     fmt_String string;
 } fmt_Allocating_String_Writer;
 
-typedef struct {
-    fmt_Writer base;
-    int bytes_written;
-    int display_width;
-} fmt_Metric_writer;
-
 int fmt__write_stream_byte(fmt_Writer *p_self, char byte);
 int fmt__write_stream_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_stream_str (fmt_Writer *p_self, const char *str);
@@ -276,10 +269,6 @@ int fmt__write_alloc_byte(fmt_Writer *p_self, char byte);
 int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_alloc_str (fmt_Writer *p_self, const char *str);
 
-int fmt__write_metric_byte(fmt_Writer *p_self, char byte);
-int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n);
-int fmt__write_metric_str (fmt_Writer *p_self, const char *str);
-
 #define FMT_NEW_STREAM_WRITER(_stream)            \
     ((fmt_Writer *)&(fmt_Stream_Writer){          \
         .base = (fmt_Writer) {                    \
@@ -290,22 +279,23 @@ int fmt__write_metric_str (fmt_Writer *p_self, const char *str);
         .stream = (_stream),                      \
     })
 
-#define FMT_NEW_STRING_WRITER(_string, _n) \
-    ((fmt_Writer *)&(fmt_String_Writer) { \
-        .base = (fmt_Writer) { \
+#define FMT_NEW_STRING_WRITER(_string, _n)        \
+    ((fmt_Writer *)&(fmt_String_Writer) {         \
+        .base = (fmt_Writer) {                    \
             .write_byte = fmt__write_string_byte, \
             .write_data = fmt__write_string_data, \
-            .write_str = fmt__write_string_str, \
-        }, \
-        .string = (_string), \
-        .at = (_string), \
-        .end = (_string) + (_n), \
+            .write_str = fmt__write_string_str,   \
+        },                                        \
+        .string = (_string),                      \
+        .at = (_string),                          \
+        .end = (_string) + (_n),                  \
     })
 
 ////////////////////////////////////////////////////////////////////////////////
 // Core functions
 ////////////////////////////////////////////////////////////////////////////////
 
+extern void fmt_init_threading();
 extern int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
 extern int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_count, ...);
 /// Implementation for the stdout and stderr printers which handles locking and
@@ -313,6 +303,7 @@ extern int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_coun
 /// and stderr are not const so we can't easily use static variables for them.
 extern int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...);
 FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *format, int arg_count, ...);
+extern fmt_String fmt__format(const char *format, int arg_count, ...);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -379,6 +370,13 @@ FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *for
         __FILE__,                            \
         __LINE__,                            \
          _format,                            \
+        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+    )
+
+#define fmt_format(_format, ...)             \
+    fmt__format(                             \
+        _format,                             \
         FMT__VA_ARG_COUNT(__VA_ARGS__)       \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
@@ -504,6 +502,8 @@ int fmt__write_stream_str(fmt_Writer *p_self, const char *str) {
     return (int)fwrite(str, 1, len, self->stream);
 }
 
+
+
 static void fmt__string_writer_check(fmt_String_Writer *self, int space) {
     if (self->at + space >= self->end) {
         fmt_panic("string writer overflow\n  current content: \"{:.{}}\"", self->string, self->at - self->string);
@@ -527,6 +527,40 @@ int fmt__write_string_data(fmt_Writer *p_self, const char *data, size_t n) {
 
 int fmt__write_string_str (fmt_Writer *p_self, const char *str) {
     return fmt__write_string_data(p_self, str, strlen(str));
+}
+
+
+
+static void fmt__string_will_append(fmt_String *str, size_t amount) {
+    const size_t min_cap = str->size + amount;
+    if (min_cap > str->capacity) {
+        const size_t target_cap = str->capacity * 15 / 10;
+        const size_t new_cap = target_cap >= min_cap ? target_cap : min_cap;
+        char *new_buf = realloc(str->data, new_cap + 1);
+        if (NULL == new_buf) {
+            fmt_panic("fmt: string allocation failed");
+        }
+        str->data = new_buf;
+    }
+}
+
+int fmt__write_alloc_byte(fmt_Writer *p_self, char byte) {
+    fmt_Allocating_String_Writer *self = (fmt_Allocating_String_Writer *)p_self;
+    fmt__string_will_append(&self->string, 1);
+    self->string.data[self->string.size++] = byte;
+    return 1;
+}
+
+int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n) {
+    fmt_Allocating_String_Writer *self = (fmt_Allocating_String_Writer *)p_self;
+    fmt__string_will_append(&self->string, n);
+    memcpy(self->string.data + self->string.size, data, n);
+    self->string.size += n;
+    return n;
+}
+
+int fmt__write_alloc_str(fmt_Writer *p_self, const char *str) {
+    return fmt__write_alloc_data(p_self, str, strlen(str));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1153,7 +1187,7 @@ static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char
         const char *digitpairs = _lookup_string; \
         /* Initialize the buffer with one zero since the while loop will never
            run if `n` is zero. */ \
-        char buf[_buf_size] = {'0'}; \
+        char buf[_buf_size] = {'0',}; \
         char *p = buf; \
         int idx; \
         while (n) { \
@@ -1210,7 +1244,7 @@ FMT_DEFINE_WRITE_DIGITS(
     fmt__write_digits_8,
     64,
     24,
-    // Python uses 4, Rust doesn't even have thousands separators, printf also uses 3.
+    // Python uses 4, Rust doesn't have thousands separators, printf also uses 3.
     3,
     "0010203040506070"
     "0111213141516171"
@@ -1675,14 +1709,19 @@ static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, cons
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
 static mtx_t fmt__print_mutex;
 
-static void fmt_clean_mutex() {
+static void fmt__clean_mutex() {
     mtx_destroy(&fmt__print_mutex);
 }
 
-static void fmt_init_threading() {
+/// Initializes the mutex used by the fmt_[e]print[ln] and fmt_panic macros.
+/// Also registers a exit handler to destroy it.
+void fmt_init_threading() {
     mtx_init(&fmt__print_mutex, mtx_plain);
-    atexit(fmt_clean_mutex);
+    atexit(fmt__clean_mutex);
 }
+#else
+/// FMT_LOCKED_DEFAULT_PRINTERS not defined, does nothing.
+void fmt_init_threading() {}
 #endif
 
 static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifier, int *arg_count, int specifier_number, va_list ap) {
@@ -1851,6 +1890,26 @@ t_bool:
     return fmt__print_bool(writer, &fs, value.v_bool);
 }
 
+int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap) {
+    int written = 0;
+    const char *open_bracket = format;
+    int specifier_number = 1;
+    while (open_bracket) {
+        if ((open_bracket = strchr(format, '{')) != NULL) {
+            written += writer->write_data(writer, format, open_bracket - format);
+            if (open_bracket[1] == '{') {
+                format = open_bracket;
+            } else {
+                written += fmt__print_specifier(writer, &open_bracket, &arg_count, specifier_number++, ap);
+                format = open_bracket;
+            }
+        } else if (*format) {
+            written += writer->write_str(writer, format);
+        }
+    }
+    return written;
+}
+
 int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_count, ...) {
     va_list ap;
     va_start(ap, arg_count);
@@ -1877,24 +1936,27 @@ int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg
     return written;
 }
 
-int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap) {
-    int written = 0;
-    const char *open_bracket = format;
-    int specifier_number = 1;
-    while (open_bracket) {
-        if ((open_bracket = strchr(format, '{')) != NULL) {
-            written += writer->write_data(writer, format, open_bracket - format);
-            if (open_bracket[1] == '{') {
-                format = open_bracket;
-            } else {
-                written += fmt__print_specifier(writer, &open_bracket, &arg_count, specifier_number++, ap);
-                format = open_bracket;
-            }
-        } else if (*format) {
-            written += writer->write_str(writer, format);
-        }
-    }
-    return written;
+fmt_String fmt__format(const char *format, int arg_count, ...) {
+    enum { INIT_CAP = 16 };
+    fmt_Allocating_String_Writer writer = (fmt_Allocating_String_Writer) {
+        .base = (fmt_Writer) {
+            .write_byte = fmt__write_alloc_byte,
+            .write_data = fmt__write_alloc_data,
+            .write_str = fmt__write_alloc_str,
+        },
+        .string = (fmt_String) {
+            .data = malloc(INIT_CAP + 1),
+            .capacity = INIT_CAP,
+            .size = 0,
+        },
+    };
+    va_list ap;
+    va_start(ap, arg_count);
+    fmt_implementation((fmt_Writer*)&writer, format, arg_count, ap);
+    va_end(ap);
+    // We always allocate capacity+1 so this is always within bounds.
+    writer.string.data[writer.string.size] = '\0';
+    return writer.string;
 }
 
 // We need a 2nd function for this so we can use variadic arguments
@@ -1906,6 +1968,9 @@ static void fmt__panic_loc(fmt_Writer *writer, ...) {
 }
 
 void fmt__panic(const char *file, int line, const char *format, int arg_count, ...) {
+#ifdef FMT_LOCKED_DEFAULT_PRINTERS
+    mtx_lock(&fmt__print_mutex);
+#endif
     fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stderr);
     fmt__panic_loc(writer, fmt__TYPE_STRING, file, fmt__TYPE_INT, line);
     va_list ap;
@@ -1915,6 +1980,10 @@ void fmt__panic(const char *file, int line, const char *format, int arg_count, .
     if (format[strlen(format) - 1] != '\n') {
         writer->write_byte(writer, '\n');
     }
+#ifdef FMT_LOCKED_DEFAULT_PRINTERS
+    mtx_unlock(&fmt__print_mutex);
+    fmt__clean_mutex();
+#endif
     abort();
 }
 

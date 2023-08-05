@@ -272,6 +272,11 @@ su_module(formatting, {
         #endif
         expect("777'644", "{o:'}", 0777644);
     })
+
+    su_test("padding", {
+        expect("00100", "{:0<5}", 100);
+        expect("0-100", "{:0>5}", -100);
+    })
 })
 
 int main() {
