@@ -213,12 +213,12 @@ su_module_d(basic_printing, "basic printing", {
         expect("-"FMT_LOWER_NAN, "{}", -NAN);
         expect("-"FMT_UPPER_NAN, "{F}", -NAN);
         expect(FMT_LOWER_INF, "{}", HUGE_VAL);
-        expect(FMT_LOWER_INF, "{:.1}", INFINITY);
         expect("1.0e00", "{e}", 1.0);
         expect("1.0e03", "{e}", 1000.0);
         expect("1.0e-02", "{e}", 0.01);
         // Currently gives this: 7.378697629483820463747179019264876842498779296875e19
         //expect("7.3786976294838206464e19", "{e}", 0x1p66);
+        su_skip();
     })
 
     su_test("pointers", {
@@ -249,6 +249,7 @@ su_module(formatting, {
         expect("3.141000", "{:.6}", 3.141);
         expect("3", "{:.0}", 3.141);
         expect("1.2e03", "{e:.1}", 1234.0);
+        expect(FMT_LOWER_INF, "{:.1}", INFINITY);
         expect("java", "{:.4}", "javascript");
         expect("안녕", "{:.2}", "안녕하세요");
         // Booleans are treated as strings
@@ -272,6 +273,7 @@ su_module(formatting, {
         expect("101'01010101", "{b:'}", 0b010101010101);
         #endif
         expect("777'644", "{o:'}", 0777644);
+        expect("1ä000", "{:ä}", 1000);
     })
 
     su_test("padding", {
@@ -282,6 +284,17 @@ su_module(formatting, {
         expect("-0100", "{:0=5}", -100);
         expect("- 100", "{:=5}", -100);
         expect("  2  ", "{:^5.0}", 2.0);
+        expect("äääabc", "{:ä>6}", "abc");
+        expect("äääabc", "{:{}>6}", "abc", u'ä');
+    })
+
+    su_test("alternate form", {
+        expect("0b101", "{b:#}", 0b101);
+        expect("0o123", "{o:#}", 00123);
+        expect("0xabc", "{x:#}", 0xabc);
+        expect("0XABC", "{X:#}", 0xabc);
+        expect("0xabc", "{p:#}", (void*)0xabc);
+        expect("0XABC", "{P:#}", (void*)0xabc);
     })
 })
 

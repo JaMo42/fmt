@@ -49,7 +49,7 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_UPPER_NAN "NAN"
 #endif
 
-// https://stackoverflow.com/a/48540034
+// Detectign empty integer macro: https://stackoverflow.com/a/48540034
 #if defined(FMT_DEFAULT_FLOAT_PRECISION) \
     && ((0 - FMT_DEFAULT_FLOAT_PRECISION - 1) == 1 \
     && (FMT_DEFAULT_FLOAT_PRECISION + 0) != -2)
@@ -830,6 +830,23 @@ static int fmt__utf32_chars_len(const char32_t *str, int chars) {
     return length;
 }
 
+static const char * fmt__utf8_skip(const char *str, int n) {
+    const fmt_char8_t *s = (const fmt_char8_t *)str;
+    while(n --> 0) {
+        s += fmt__utf8_codepoint_length(*s);
+    }
+    return (const char *)s;
+}
+
+/// Skips `index` codepoints and returns the ascii character after that.
+static char32_t fmt__utf8_peek_ascii(const char *str, int index) {
+    return *fmt__utf8_skip(str, index);
+}
+
+static bool fmt__starts_with(const char *str, const char *with, int len) {
+    return memcmp(str, with, len) == 0;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Format specifiers
 ////////////////////////////////////////////////////////////////////////////////
@@ -850,13 +867,13 @@ typedef enum {
 // TODO: reorder to minimize padding.
 typedef struct {
     char type;
-    char fill;
+    char32_t fill;
     fmt_Alignment align;
     fmt_Sign sign;
     bool alternate_form;
     bool zero_pad;
     int width;
-    char group;
+    char32_t group;
     int precision;
 } fmt_Format_Specifier;
 
@@ -910,7 +927,13 @@ static const char * fmt__parse_int(
         ++format_specifier;
         if (*format_specifier == '}') {
             ++format_specifier;
-            // FIXME: check arg_count
+            if (*arg_count == 0) {
+                fmt_panic(
+                    "Arguments exhaused at {} in format specifier {}",
+                    what,
+                    specifier_number
+                );
+            }
             *out = fmt__va_get_unsigned_integer(ap);
             --*arg_count;
         } else {
@@ -965,7 +988,12 @@ static const char * fmt__parse_specifier(
         if (strchr(valid, parsed) != NULL) {
             out->type = parsed;
         } else {
-            fmt_eprintln("invalid display type '{}' in specifier {}, expected one of: {}", (char)parsed, specifier_number, valid);
+            fmt_panic(
+                "fmt: invalid display type '{}' in specifier {}, expected one of: {}",
+                (char)parsed,
+                specifier_number,
+                valid
+            );
         }
     }
     if (*format_specifier == '}') {
@@ -973,22 +1001,38 @@ static const char * fmt__parse_specifier(
     } else if (*format_specifier == ':') {
         ++format_specifier;
     } else {
-        fmt_panic("expected : or } after type in format specifier {}", specifier_number);
+        fmt_panic(
+            "fmt: expected : or } after display type in format specifier {}",
+            specifier_number
+        );
     }
     if ((parsed = fmt__parse_alignment(*format_specifier))) {
         out->align = (fmt_Alignment)parsed;
         ++format_specifier;
-    } else if ((parsed = fmt__parse_alignment(format_specifier[1]))) {
+    } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 1)))) {
         out->align = (fmt_Alignment)parsed;
-        out->fill = *format_specifier;
-        format_specifier += 2;
-    } else if ((parsed = fmt__parse_alignment(format_specifier[2]))
-                && format_specifier[0] == '{' && format_specifier[1] == '}') {
-        out->align = (fmt_Alignment)parsed;
-        // FIXME: check arg_count
-        out->fill = fmt__va_get_character(ap);
-        --*arg_count;
-        format_specifier += 3;
+        format_specifier += fmt__utf8_decode((const fmt_char8_t *)format_specifier, &out->fill) + 1;
+    } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 2)))) {
+        if (format_specifier[0] == '{' && format_specifier[1] == '}') {
+            out->align = (fmt_Alignment)parsed;
+            if (*arg_count == 0) {
+                fmt_panic(
+                    "fmt: arguments exhausted at fill character in format specifier {}",
+                    specifier_number
+                );
+            }
+            out->fill = fmt__va_get_character(ap);
+            --*arg_count;
+            format_specifier += 3;
+        } else if (format_specifier[0] == '{' && format_specifier[1] == '{') {
+            out->align = (fmt_Alignment)parsed;
+            out->fill = '{';
+            format_specifier += 3;
+        } else if (format_specifier[0] == '{' && format_specifier[1] == '{') {
+            out->align = (fmt_Alignment)parsed;
+            out->fill = '}';
+            format_specifier += 3;
+        }
     }
     if ((parsed = fmt__parse_sign(*format_specifier))) {
         out->sign = parsed;
@@ -1009,20 +1053,20 @@ static const char * fmt__parse_specifier(
     // If we have a . the next charater must also be a . or the end of the
     // specifier for it to be the grouping character.  Anything else in this
     // position must be the grouping character.
+    char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
     if ((*format_specifier != '.' && *format_specifier != '}')
-        || format_specifier[1] == '.' || format_specifier[1] == '}') {
-        out->group = *format_specifier;
-        ++format_specifier;
+        || next == '.' || next == '}') {
+        format_specifier += fmt__utf8_decode((const fmt_char8_t *)format_specifier, &out->group);
     }
     if (*format_specifier == '.') {
         ++format_specifier;
         format_specifier = fmt__parse_int(format_specifier, "precision", &out->precision, specifier_number, arg_count, ap);
     }
-    ++format_specifier; // skip '}'
+    if (*format_specifier++ != '}') {
+        fmt_panic("fmt: format specifier {} is invalid", specifier_number);
+    }
     return format_specifier;
 }
-
-#undef READ_ARG
 
 ////////////////////////////////////////////////////////////////////////////////
 // Auxillary functions for printing functions
@@ -1118,13 +1162,37 @@ static int fmt__min(int a, int b) {
     return a < b ? a : b;
 }
 
-static void fmt__pad(fmt_Writer *writer, int n, char32_t ch) {
-    static char buf[32];
-    memset(buf, ch, 32);
-    while (n > 0) {
-        // TODO: utf-8
-        writer->write_data(writer, buf, fmt__min(n, 32));
-        n -= 32;
+static int fmt__pad(fmt_Writer *writer, int n, char32_t ch) {
+    if (n <= 0) {
+        return 0;
+    }
+    enum { BUF_SIZE = 32 };
+    static thread_local char buf[BUF_SIZE];
+    const int amount = n;
+    if (ch < 0x80) {
+        memset(buf, ch, BUF_SIZE);
+        while (n > 0) {
+            writer->write_data(writer, buf, fmt__min(n, BUF_SIZE));
+            n -= BUF_SIZE;
+        }
+        return amount;
+    } else {
+        char utf8[4];
+        const int len = fmt__utf8_encode(ch, utf8);
+        const int count = BUF_SIZE / len;
+        const int batch = count * len;
+        if (!fmt__starts_with(buf, utf8, len)) {
+            char *p = buf;
+            for (int i = 0; i < count; ++i) {
+                memcpy(p, utf8, len);
+                p += len;
+            }
+        }
+        while (n > 0) {
+            writer->write_data(writer, buf, fmt__min(n*len, batch));
+            n -= count;
+        }
+        return amount * len;
     }
 }
 
@@ -1482,11 +1550,11 @@ static int fmt__print_utf8(fmt_Writer *writer, fmt_Format_Specifier *fs, const c
     }
 
     fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width_and_length.first, fs->align);
-    int written = pad.first + pad.second;
 
-    fmt__pad(writer, pad.first, fs->fill);
+    int written = 0;
+    written += fmt__pad(writer, pad.first, fs->fill);
     written += fmt__write_utf8(writer, string, to_print);
-    fmt__pad(writer, pad.second, fs->fill);
+    written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
 }
@@ -1500,11 +1568,11 @@ static int fmt__print_utf16(fmt_Writer *writer, fmt_Format_Specifier *fs, const 
     }
 
     fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width_and_length.first, fs->align);
-    int written = pad.first + pad.second;
 
-    fmt__pad(writer, pad.first, fs->fill);
+    int written = 0;
+    written += fmt__pad(writer, pad.first, fs->fill);
     written += fmt__write_utf16(writer, string, to_print);
-    fmt__pad(writer, pad.second, fs->fill);
+    written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
 }
@@ -1518,11 +1586,11 @@ static int fmt__print_utf32(fmt_Writer *writer, fmt_Format_Specifier *fs, const 
     }
 
     fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width, fs->align);
-    int written = pad.first + pad.second;
 
-    fmt__pad(writer, pad.first, fs->fill);
+    int written = 0;
+    written += fmt__pad(writer, pad.first, fs->fill);
     written += fmt__write_utf32(writer, string, to_print);
-    fmt__pad(writer, pad.second, fs->fill);
+    written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
 }
@@ -1547,9 +1615,9 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
     const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
     const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
 
-    int written = pad.first + pad.second;
+    int written = 0;
     if (!pad_after_sign_and_base) {
-        fmt__pad(writer, pad.first, padchar);
+        written += fmt__pad(writer, pad.first, padchar);
     }
     if (sign) {
         written += writer->write_byte(writer, sign);
@@ -1558,14 +1626,14 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
         written += writer->write_data(writer, base->prefix, base->prefix_len);
     }
     if (pad_after_sign_and_base) {
-        fmt__pad(writer, pad.first, padchar);
+        written += fmt__pad(writer, pad.first, padchar);
     }
     if (fs->group) {
         written += base->write_digits_grouped(writer, i, digits_width, fs->group);
     } else {
         written += base->write_digits(writer, i, digits_width);
     }
-    fmt__pad(writer, pad.second, padchar);
+    written += fmt__pad(writer, pad.second, padchar);
 
     return written;
 }
@@ -1642,15 +1710,15 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
     const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
 
-    int written = pad.first + pad.second;
+    int written = 0;
     if (!pad_after_sign_and_base) {
-        fmt__pad(writer, pad.first, padchar);
+        written += fmt__pad(writer, pad.first, padchar);
     }
     if (sign) {
         written += writer->write_byte(writer, sign);
     }
     if (pad_after_sign_and_base) {
-        fmt__pad(writer, pad.first, padchar);
+        written += fmt__pad(writer, pad.first, padchar);
     }
     written += fmt__write_float_integer_digits(writer, f, integer_width, groupchar, group_interval);
     if (!no_fraction) {
@@ -1664,7 +1732,7 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
             written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
         }
     }
-    fmt__pad(writer, pad.second, padchar);
+    written += fmt__pad(writer, pad.second, padchar);
     return written;
 }
 
