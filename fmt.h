@@ -1646,14 +1646,10 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
 }
 
 static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b) {
-#ifdef FMT_BOOL_YES_NO
-    static const char *STRINGS[] = {"no", "yes"};
-    static const int LEN[] = {2, 3};
-#else
-    static const char *STRINGS[] = {"false", "true"};
-    static const int LEN[] = {5, 4};
-#endif
-    return fmt__print_utf8(writer, fs, STRINGS[b], LEN[b]);
+    static const char *STRINGS[] = {"false", "true", "no", "yes"};
+    static const int LEN[] = {5, 4, 2, 3};
+    const int index = ((int)fs->alternate_form << 1) | (int)b;
+    return fmt__print_utf8(writer, fs, STRINGS[index], LEN[index]);
 }
 
 #define FMT__FLOAT_SPECIAL_CASES()                                                       \

@@ -169,13 +169,8 @@ su_module_d(basic_printing, "basic printing", {
     su_test("booleans", {
         bool t = true;
         bool f = false;
-        #ifdef FMT_BOOL_YES_NO
-        expect("yes", "{}", t);
-        expect("no", "{}", f);
-        #else
         expect("true", "{}", t);
         expect("false", "{}", f);
-        #endif
     })
 
     su_test("integers", {
@@ -254,11 +249,7 @@ su_module(formatting, {
         expect("안녕", "{:.2}", "안녕하세요");
         // Booleans are treated as strings
         // The cast to bool is needed for C11 builds
-        #ifdef FMT_BOOL_YES_NO
-        expect("y", "{:.1}", (bool)true);
-        #else
         expect("t", "{:.1}", (bool)true);
-        #endif
     })
 
     su_test("grouping", {
@@ -295,6 +286,8 @@ su_module(formatting, {
         expect("0XABC", "{X:#}", 0xabc);
         expect("0xabc", "{p:#}", (void*)0xabc);
         expect("0XABC", "{P:#}", (void*)0xabc);
+        expect("yes", "{:#}", (bool)true);
+        expect("no", "{:#}", (bool)false);
     })
 })
 
