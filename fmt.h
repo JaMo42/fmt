@@ -1729,8 +1729,8 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
         double unused, fraction = modf(f, &unused);
         written += writer->write_byte(writer, '.');
         if (fraction_width < 20) {
-            const uint64_t as_int = ceil(fraction * fmt__pow10(fraction_width));
-            written += fmt__write_digits_10(writer, as_int, fraction_width);
+                const uint64_t as_int = round(fraction * fmt__pow10(fraction_width));
+                written += fmt__write_digits_10(writer, as_int, fraction_width);
         } else {
             written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
         }
