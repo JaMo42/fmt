@@ -213,7 +213,9 @@ su_module_d(basic_printing, "basic printing", {
         expect("1.0e-02", "{e}", 0.01);
         // Currently gives this: 7.378697629483820463747179019264876842498779296875e19
         //expect("7.3786976294838206464e19", "{e}", 0x1p66);
-        su_skip();
+        expect("12.000%", "{%:.3}", 0.12);
+        expect("12.30000%", "{%:.5}", 0.123);
+        expect("50%", "{%:.0}", 0.5);
     })
 
     su_test("pointers", {

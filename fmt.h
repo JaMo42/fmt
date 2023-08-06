@@ -1676,7 +1676,7 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
         }                                                                                \
     } while(0)
 
-static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
+static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f, char suffix) {
     FMT__FLOAT_SPECIAL_CASES();
     char sign = 0;
     if (f < 0.0) {
@@ -1707,7 +1707,7 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     const char32_t groupchar = fs->group;
     const int group_interval = fs->group ? 3 : 0;
 
-    const int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width);
+    const int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width) + !!suffix;
     const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
     fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
     const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
@@ -1729,11 +1729,23 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
         double unused, fraction = modf(f, &unused);
         written += writer->write_byte(writer, '.');
         if (fraction_width < 20) {
-                const uint64_t as_int = round(fraction * fmt__pow10(fraction_width));
+            const uint64_t as_int = round(fraction * fmt__pow10(fraction_width));
+            if (as_int == 0) {
+                // fmt__write_digits_10 can't give us multiple zeros
+                static const char zeros[19] = {
+                    '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+                    '0' ,'0', '0', '0', '0', '0', '0', '0', '0'
+                };
+                written += writer->write_data(writer, zeros, fraction_width);
+            } else {
                 written += fmt__write_digits_10(writer, as_int, fraction_width);
+            }
         } else {
             written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
         }
+    }
+    if (suffix) {
+        written += writer->write_byte(writer, suffix);
     }
     written += fmt__pad(writer, pad.second, padchar);
     return written;
@@ -1743,7 +1755,7 @@ static int fmt__print_float_exponential(fmt_Writer *writer, fmt_Format_Specifier
     FMT__FLOAT_SPECIAL_CASES();
     int exp;
     fmt__get_base_and_exponent(f, &f, &exp);
-    int written = fmt__print_float_decimal(writer, fs, f);
+    int written = fmt__print_float_decimal(writer, fs, f, 0);
     written += writer->write_byte(writer, 'e');
     fs->width = 2 + (exp < 0);
     fs->zero_pad = true;
@@ -1944,8 +1956,10 @@ t_pointer:
 t_float:
     if (fs.type == 'e' || fs.type == 'E') {
         return fmt__print_float_exponential(writer, &fs, value.v_float);
+    } else if (fs.type == '%') {
+        return fmt__print_float_decimal(writer, &fs, value.v_float * 100.0, '%');
     } else {
-        return fmt__print_float_decimal(writer, &fs, value.v_float);
+        return fmt__print_float_decimal(writer, &fs, value.v_float, 0);
     }
 
 t_bool:
