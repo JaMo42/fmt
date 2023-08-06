@@ -538,7 +538,7 @@ static void fmt__string_will_append(fmt_String *str, size_t amount) {
         const size_t new_cap = target_cap >= min_cap ? target_cap : min_cap;
         char *new_buf = realloc(str->data, new_cap + 1);
         if (NULL == new_buf) {
-            fmt_panic("fmt: string allocation failed");
+            fmt_panic("string allocation failed");
         }
         str->data = new_buf;
     }
@@ -989,7 +989,7 @@ static const char * fmt__parse_specifier(
             out->type = parsed;
         } else {
             fmt_panic(
-                "fmt: invalid display type '{}' in specifier {}, expected one of: {}",
+                "invalid display type '{}' in specifier {}, expected one of: {}",
                 (char)parsed,
                 specifier_number,
                 valid
@@ -1002,7 +1002,7 @@ static const char * fmt__parse_specifier(
         ++format_specifier;
     } else {
         fmt_panic(
-            "fmt: expected : or } after display type in format specifier {}",
+            "expected : or } after display type in format specifier {}",
             specifier_number
         );
     }
@@ -1017,11 +1017,18 @@ static const char * fmt__parse_specifier(
             out->align = (fmt_Alignment)parsed;
             if (*arg_count == 0) {
                 fmt_panic(
-                    "fmt: arguments exhausted at fill character in format specifier {}",
+                    "arguments exhausted at fill character in format specifier {}",
                     specifier_number
                 );
             }
             out->fill = fmt__va_get_character(ap);
+            if (!fmt__is_valid_codepoint(out->fill)) {
+                fmt_panic(
+                    "parameterized fill character in format specifier {} is not a valid unicode character: {x:#}",
+                    specifier_number,
+                    (unsigned)out->fill
+                );
+            }
             --*arg_count;
             format_specifier += 3;
         } else if (format_specifier[0] == '{' && format_specifier[1] == '{') {
@@ -1063,7 +1070,7 @@ static const char * fmt__parse_specifier(
         format_specifier = fmt__parse_int(format_specifier, "precision", &out->precision, specifier_number, arg_count, ap);
     }
     if (*format_specifier++ != '}') {
-        fmt_panic("fmt: format specifier {} is invalid", specifier_number);
+        fmt_panic("format specifier {} is invalid", specifier_number);
     }
     return format_specifier;
 }
@@ -1389,7 +1396,7 @@ static const fmt_Base* fmt__get_base(char type) {
     case 'o':
         return &BASE_8;
     default:
-        fmt_panic("fmt: invalid type for integer base: {}", type);
+        fmt_panic("invalid type for integer base: {}", type);
     }
 }
 
