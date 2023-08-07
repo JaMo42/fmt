@@ -23,10 +23,12 @@ typedef uint_least8_t fmt_char8_t;
 // TODO: remove
 #include "icecream.h"
 
-#if __STDC_VERSION__ > 201710L
+#if defined(__cplusplus) || __STDC_VERSION__ > 201710L
 #  define FMT__NORETURN [[noreturn]]
+#  define FMT__CONSTEXPR constexpr
 #else
 #  define FMT__NORETURN _Noreturn
+#  define FMT__CONSTEXPR const
 #endif
 
 #ifndef FMT_DEFAULT_TIME_FORMAT
@@ -180,9 +182,45 @@ typedef enum {
 
 #ifdef _MSC_VER
 #define fmt__TYPE_WSTRING fmt__TYPE_STRING_16
+#define fmt__TYPE_WCHAR fmt__TYPE_UNSIGNED_SHORT
 #else
 #define fmt__TYPE_WSTRING fmt__TYPE_STRING_32
+#define fmt__TYPE_WCHAR fmt__TYPE_UNSIGNED
 #endif
+
+#ifdef __cplusplus
+
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char _) { return fmt__TYPE_CHAR; };
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char16_t _) { return fmt__TYPE_UNSIGNED_SHORT; };
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char32_t _) { return fmt__TYPE_UNSIGNED; };
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] wchar_t _) { return fmt__TYPE_WCHAR; };
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] signed char _) { return fmt__TYPE_SIGNED_CHAR; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] short _) { return fmt__TYPE_SHORT; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] int _) { return fmt__TYPE_INT; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] long _) { return fmt__TYPE_LONG; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] long long _) { return fmt__TYPE_LONG_LONG; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned char _) { return fmt__TYPE_UNSIGNED_CHAR; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned short _) { return fmt__TYPE_UNSIGNED_SHORT; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned _) { return fmt__TYPE_UNSIGNED; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned long _) { return fmt__TYPE_UNSIGNED_LONG; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned long long _) { return fmt__TYPE_UNSIGNED_LONG_LONG; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] float _) { return fmt__TYPE_FLOAT; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] double _) { return fmt__TYPE_DOUBLE; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] bool _) { return fmt__TYPE_BOOL; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char *_) { return fmt__TYPE_STRING; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const char *_) { return fmt__TYPE_STRING; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const char16_t *_) { return fmt__TYPE_STRING_16; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char16_t *_) { return fmt__TYPE_STRING_16; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const char32_t *_) { return fmt__TYPE_STRING_32; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char32_t *_) { return fmt__TYPE_STRING_32; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] wchar_t *_) { return fmt__TYPE_WSTRING; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const wchar_t *_) { return fmt__TYPE_WSTRING; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] void *_) { return fmt__TYPE_POINTER; }
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const void *_) { return fmt__TYPE_POINTER; }
+template<class Else>
+static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] Else _) { return fmt__TYPE_UNKNOWN; }
+
+#else // __cplusplus
 
 #define FMT__TYPE_ID(x) \
     _Generic((x), \
@@ -213,6 +251,8 @@ typedef enum {
         default: fmt__TYPE_UNKNOWN \
     )
 
+#endif // __cplusplus
+
 #define FMT__TYPE_ID_AND_VALUE(x) FMT__TYPE_ID(x), (x)
 
 /// Turns a list of parameters into a list of their type IDs and the parameter:
@@ -225,6 +265,7 @@ typedef enum {
 // Writer interface
 ////////////////////////////////////////////////////////////////////////////////
 
+/// "vtable" for writers
 typedef struct fmt_Writer {
     /// Writes a single byte
     int (*write_byte)(struct fmt_Writer *self, char byte);
@@ -235,25 +276,25 @@ typedef struct fmt_Writer {
 } fmt_Writer;
 
 typedef struct {
-    fmt_Writer base;
+    const fmt_Writer base;
     FILE *stream;
 } fmt_Stream_Writer;
 
 typedef struct {
-    fmt_Writer base;
-    char *string;
+    const fmt_Writer base;
+    const char *const string;
     char *at;
-    char *end;
+    const char *const end;
 } fmt_String_Writer;
 
 typedef struct {
     char *data;
-    size_t size;
     size_t capacity;
+    size_t size;
 } fmt_String;
 
 typedef struct {
-    fmt_Writer base;
+    const fmt_Writer base;
     fmt_String string;
 } fmt_Allocating_String_Writer;
 
@@ -269,26 +310,43 @@ int fmt__write_alloc_byte(fmt_Writer *p_self, char byte);
 int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_alloc_str (fmt_Writer *p_self, const char *str);
 
-#define FMT_NEW_STREAM_WRITER(_stream)            \
-    ((fmt_Writer *)&(fmt_Stream_Writer){          \
-        .base = (fmt_Writer) {                    \
-            .write_byte = fmt__write_stream_byte, \
-            .write_data = fmt__write_stream_data, \
-            .write_str = fmt__write_stream_str,   \
-        },                                        \
-        .stream = (_stream),                      \
+static FMT__CONSTEXPR fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
+    .write_byte = fmt__write_stream_byte,
+    .write_data = fmt__write_stream_data,
+    .write_str = fmt__write_stream_str,
+};
+
+static FMT__CONSTEXPR fmt_Writer fmt_STRING_WRITER_FUNCTIONS = {
+    .write_byte = fmt__write_string_byte,
+    .write_data = fmt__write_string_data,
+    .write_str = fmt__write_string_str,
+};
+
+static FMT__CONSTEXPR fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
+    .write_byte = fmt__write_alloc_byte,
+    .write_data = fmt__write_alloc_data,
+    .write_str = fmt__write_alloc_str,
+};
+
+// Note: these macros don't work in C++ because you can't take the address of
+// an rvalue.
+
+/// Creates a `fmt_Stream_Writer` on the stack and returns it's address as a
+/// `fmt_Writer *`.
+#define FMT_NEW_STREAM_WRITER(_stream)       \
+    ((fmt_Writer *)&(fmt_Stream_Writer){     \
+        .base = fmt_STREAM_WRITER_FUNCTIONS, \
+        .stream = (_stream),                 \
     })
 
-#define FMT_NEW_STRING_WRITER(_string, _n)        \
-    ((fmt_Writer *)&(fmt_String_Writer) {         \
-        .base = (fmt_Writer) {                    \
-            .write_byte = fmt__write_string_byte, \
-            .write_data = fmt__write_string_data, \
-            .write_str = fmt__write_string_str,   \
-        },                                        \
-        .string = (_string),                      \
-        .at = (_string),                          \
-        .end = (_string) + (_n),                  \
+/// Creates a `fmt_String_Writer` on the stack and returns it's address as a
+/// `fmt_Writer *`.
+#define FMT_NEW_STRING_WRITER(_string, _n)   \
+    ((fmt_Writer *)&(fmt_String_Writer) {    \
+        .base = fmt_STRING_WRITER_FUNCTIONS, \
+        .string = (_string),                 \
+        .at = (_string),                     \
+        .end = (_string) + (_n),             \
     })
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -304,6 +362,7 @@ extern int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_coun
 extern int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...);
 FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *format, int arg_count, ...);
 extern fmt_String fmt__format(const char *format, int arg_count, ...);
+extern int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -357,10 +416,10 @@ extern fmt_String fmt__format(const char *format, int arg_count, ...);
     )
 
 #define fmt_sprint(_string, _n, _format, ...)   \
-    fmt__with_writer(                           \
-        FMT_NEW_STRING_WRITER((_string), (_n)), \
+    fmt__sprint(                                \
+        (_string),                              \
+        (_n),                                   \
         _format,                                \
-        false,                                  \
         FMT__VA_ARG_COUNT(__VA_ARGS__)          \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__))    \
     )
@@ -390,7 +449,7 @@ extern fmt_String fmt__format(const char *format, int arg_count, ...);
 ////////////////////////////////////////////////////////////////////////////////
 
 static size_t fmt__va_get_unsigned_integer(va_list ap) {
-    fmt_Type_Id type = va_arg(ap, fmt_Type_Id);
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
     switch (type) {
     case fmt__TYPE_SIGNED_CHAR:
     case fmt__TYPE_SHORT:
@@ -428,7 +487,7 @@ negative:
 }
 
 static char32_t fmt__va_get_character(va_list ap) {
-    fmt_Type_Id type = va_arg(ap, fmt_Type_Id);
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
     switch (type) {
     case fmt__TYPE_CHAR:
         // char gets promoted to int
@@ -441,7 +500,7 @@ static char32_t fmt__va_get_character(va_list ap) {
         // promoted to int
         return va_arg(ap, int);
     case fmt__TYPE_UNSIGNED:
-        return va_arg(ap, char32_t);
+        return va_arg(ap, unsigned int);
     default:
         fmt_panic("expected character type");
     }
@@ -536,7 +595,7 @@ static void fmt__string_will_append(fmt_String *str, size_t amount) {
     if (min_cap > str->capacity) {
         const size_t target_cap = str->capacity * 15 / 10;
         const size_t new_cap = target_cap >= min_cap ? target_cap : min_cap;
-        char *new_buf = realloc(str->data, new_cap + 1);
+        char *const new_buf = (char *)realloc(str->data, new_cap + 1);
         if (NULL == new_buf) {
             fmt_panic("string allocation failed");
         }
@@ -1042,7 +1101,7 @@ static const char * fmt__parse_specifier(
         }
     }
     if ((parsed = fmt__parse_sign(*format_specifier))) {
-        out->sign = parsed;
+        out->sign = (fmt_Sign)parsed;
         ++format_specifier;
     }
     if (*format_specifier == '#') {
@@ -1652,28 +1711,28 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
     return fmt__print_utf8(writer, fs, STRINGS[index], LEN[index]);
 }
 
-#define FMT__FLOAT_SPECIAL_CASES()                                                       \
-    do {                                                                                 \
-        if (isinf(f)) {                                                                  \
-            const char *const s = isupper(fs->type) ? ""FMT_UPPER_INF : ""FMT_LOWER_INF; \
-            int written = 0;                                                             \
-            if (signbit(f)) {                                                            \
-                written += writer->write_byte(writer, '-');                              \
-            }                                                                            \
-            fs->precision = -1;                                                          \
-            written += fmt__print_utf8(writer, fs, s, strlen(s));                        \
-            return written;                                                              \
-        }                                                                                \
-        if (isnan(f)) {                                                                  \
-            const char *const s = isupper(fs->type) ? ""FMT_UPPER_NAN : ""FMT_LOWER_NAN; \
-            int written = 0;                                                             \
-            if (signbit(f)) {                                                            \
-                written += writer->write_byte(writer, '-');                              \
-            }                                                                            \
-            fs->precision = -1;                                                          \
-            written += fmt__print_utf8(writer, fs, s, strlen(s));                        \
-            return written;                                                              \
-        }                                                                                \
+#define FMT__FLOAT_SPECIAL_CASES()                                                         \
+    do {                                                                                   \
+        if (isinf(f)) {                                                                    \
+            const char *const s = isupper(fs->type) ? "" FMT_UPPER_INF : "" FMT_LOWER_INF; \
+            int written = 0;                                                               \
+            if (signbit(f)) {                                                              \
+                written += writer->write_byte(writer, '-');                                \
+            }                                                                              \
+            fs->precision = -1;                                                            \
+            written += fmt__print_utf8(writer, fs, s, strlen(s));                          \
+            return written;                                                                \
+        }                                                                                  \
+        if (isnan(f)) {                                                                    \
+            const char *const s = isupper(fs->type) ? "" FMT_UPPER_NAN : "" FMT_LOWER_NAN; \
+            int written = 0;                                                               \
+            if (signbit(f)) {                                                              \
+                written += writer->write_byte(writer, '-');                                \
+            }                                                                              \
+            fs->precision = -1;                                                            \
+            written += fmt__print_utf8(writer, fs, s, strlen(s));                          \
+            return written;                                                                \
+        }                                                                                  \
     } while(0)
 
 static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f, char suffix) {
@@ -1803,7 +1862,7 @@ static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifie
         fmt_panic("\nArguments exhausted at specifier {}", specifier_number);
     }
     --*arg_count;
-    fmt_Type_Id type = va_arg(ap, fmt_Type_Id);
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
     fmt_Format_Specifier fs;
     union {
         const char *v_string;
@@ -1998,7 +2057,11 @@ int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_lock(&fmt__print_mutex);
 #endif
-    fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stream);
+    fmt_Stream_Writer swriter = {
+        .base = fmt_STREAM_WRITER_FUNCTIONS,
+        .stream = stream,
+    };
+    fmt_Writer *writer = (fmt_Writer *)&swriter;
     va_list ap;
     va_start(ap, arg_count);
     const int written = fmt_implementation(writer, format, arg_count, ap) + newline;
@@ -2015,13 +2078,9 @@ int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg
 fmt_String fmt__format(const char *format, int arg_count, ...) {
     enum { INIT_CAP = 16 };
     fmt_Allocating_String_Writer writer = (fmt_Allocating_String_Writer) {
-        .base = (fmt_Writer) {
-            .write_byte = fmt__write_alloc_byte,
-            .write_data = fmt__write_alloc_data,
-            .write_str = fmt__write_alloc_str,
-        },
+        .base = fmt_ALLOC_WRITER_FUNCTIONS,
         .string = (fmt_String) {
-            .data = malloc(INIT_CAP + 1),
+            .data = (char *)malloc(INIT_CAP + 1),
             .capacity = INIT_CAP,
             .size = 0,
         },
@@ -2047,7 +2106,11 @@ void fmt__panic(const char *file, int line, const char *format, int arg_count, .
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_lock(&fmt__print_mutex);
 #endif
-    fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stderr);
+    fmt_Stream_Writer swriter = {
+        .base = fmt_STREAM_WRITER_FUNCTIONS,
+        .stream = stderr,
+    };
+    fmt_Writer *writer = (fmt_Writer *)&swriter;
     fmt__panic_loc(writer, fmt__TYPE_STRING, file, fmt__TYPE_INT, line);
     va_list ap;
     va_start(ap, arg_count);
@@ -2061,6 +2124,20 @@ void fmt__panic(const char *file, int line, const char *format, int arg_count, .
     fmt__clean_mutex();
 #endif
     abort();
+}
+
+int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...) {
+    fmt_String_Writer writer = (fmt_String_Writer) {
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = string,
+        .at = string,
+        .end = string + size,
+    };
+    va_list ap;
+    va_start(ap, arg_count);
+    const int written = fmt_implementation((fmt_Writer *)&writer, format, arg_count, ap);
+    va_end(ap);
+    return written;
 }
 
 #endif /* FMT_IMPLEMENTATION */

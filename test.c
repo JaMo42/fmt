@@ -10,9 +10,19 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
     memset(buf, 0, sizeof(buf));
     va_list ap;
     va_start(ap, arg_count);
+#ifdef __cplusplus
+    fmt_String_Writer writer = (fmt_String_Writer) {
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = buf,
+        .at = buf,
+        .end = buf + sizeof(buf),
+    };
+    const int written = fmt_implementation((fmt_Writer *)&writer, fmt, arg_count, ap);
+#else
     const int written = fmt_implementation(
         FMT_NEW_STRING_WRITER(buf, sizeof(buf)), fmt, arg_count, ap
     );
+#endif
     va_end(ap);
     if (strcmp(expected, buf) != 0) {
         fmt_eprintln(
@@ -203,10 +213,10 @@ su_module_d(basic_printing, "basic printing", {
         expect(FMT_UPPER_INF, "{F}", INFINITY);
         expect(FMT_LOWER_NAN, "{}", NAN);
         expect(FMT_UPPER_NAN, "{F}", NAN);
-        expect("-"FMT_LOWER_INF, "{}", -INFINITY);
-        expect("-"FMT_UPPER_INF, "{F}", -INFINITY);
-        expect("-"FMT_LOWER_NAN, "{}", -NAN);
-        expect("-"FMT_UPPER_NAN, "{F}", -NAN);
+        expect("-" FMT_LOWER_INF, "{}", -INFINITY);
+        expect("-" FMT_UPPER_INF, "{F}", -INFINITY);
+        expect("-" FMT_LOWER_NAN, "{}", -NAN);
+        expect("-" FMT_UPPER_NAN, "{F}", -NAN);
         expect(FMT_LOWER_INF, "{}", HUGE_VAL);
         expect("1.0e00", "{e}", 1.0);
         expect("1.0e03", "{e}", 1000.0);
