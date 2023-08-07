@@ -25,10 +25,8 @@ typedef uint_least8_t fmt_char8_t;
 
 #if defined(__cplusplus) || __STDC_VERSION__ > 201710L
 #  define FMT__NORETURN [[noreturn]]
-#  define FMT__CONSTEXPR constexpr
 #else
 #  define FMT__NORETURN _Noreturn
-#  define FMT__CONSTEXPR const
 #endif
 
 #ifndef FMT_DEFAULT_TIME_FORMAT
@@ -268,11 +266,11 @@ static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] Else _) { return fmt_
 /// "vtable" for writers
 typedef struct fmt_Writer {
     /// Writes a single byte
-    int (*write_byte)(struct fmt_Writer *self, char byte);
+    int (*const write_byte)(struct fmt_Writer *self, char byte);
     /// Writes `n` bytes of `data`
-    int (*write_data)(struct fmt_Writer *self, const char *data, size_t n);
+    int (*const write_data)(struct fmt_Writer *self, const char *data, size_t n);
     /// Writes `str` until a null-byte is encountered
-    int (*write_str)(struct fmt_Writer *self, const char *str);
+    int (*const write_str)(struct fmt_Writer *self, const char *str);
 } fmt_Writer;
 
 typedef struct {
@@ -310,19 +308,19 @@ int fmt__write_alloc_byte(fmt_Writer *p_self, char byte);
 int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_alloc_str (fmt_Writer *p_self, const char *str);
 
-static FMT__CONSTEXPR fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
+static const fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_stream_byte,
     .write_data = fmt__write_stream_data,
     .write_str = fmt__write_stream_str,
 };
 
-static FMT__CONSTEXPR fmt_Writer fmt_STRING_WRITER_FUNCTIONS = {
+static const fmt_Writer fmt_STRING_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_string_byte,
     .write_data = fmt__write_string_data,
     .write_str = fmt__write_string_str,
 };
 
-static FMT__CONSTEXPR fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
+static const fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_alloc_byte,
     .write_data = fmt__write_alloc_data,
     .write_str = fmt__write_alloc_str,
