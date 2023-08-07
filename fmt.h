@@ -564,7 +564,7 @@ int fmt__write_stream_str(fmt_Writer *p_self, const char *str) {
 
 
 static void fmt__string_writer_check(fmt_String_Writer *self, int space) {
-    if (self->at + space >= self->end) {
+    if (self->at + space > self->end) {
         fmt_panic("string writer overflow\n  current content: \"{:.{}}\"", self->string, self->at - self->string);
     }
 }
