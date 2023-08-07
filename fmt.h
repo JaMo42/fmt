@@ -150,7 +150,7 @@ typedef uint_least8_t fmt_char8_t;
   FMT__FOR_EACH_(FMT__FOR_EACH_NARG(x, __VA_ARGS__), what, x, __VA_ARGS__)
 
 /// Returns the number of arguments given.
-#define FMT__VA_ARG_COUNT(...) (0 __VA_OPT__(+ FMT__FOR_EACH_NARG(__VA_ARGS__)))
+#define FMT_VA_ARG_COUNT(...) (0 __VA_OPT__(+ FMT__FOR_EACH_NARG(__VA_ARGS__)))
 
 ////////////////////////////////////////////////////////////////////////////////
 // Types IDs
@@ -355,15 +355,56 @@ static const fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
 ////////////////////////////////////////////////////////////////////////////////
 
 extern void fmt_init_threading();
+
+/// The core function of this library that all other formatting functions/macros
+/// eventually call.
+///
+/// `ap` should contain pairs of type IDs and arguments.
+/// `arg_count` is the numer of those pairs.
 extern int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
-extern int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_count, ...);
+
+/// Implementation for the `fmt_write` macro.
+///
+/// Examples:
+/// ```c
+/// FILE *log_file = fopen("log.txt", "w");
+/// fmt_Writer *log_writer = FMT_NEW_STREAM_WRITER(log_file);
+/// #define log(_format, ...)
+///     fmt__write(
+///         log_writer,
+///         "{}: " _format,
+///         1 + FMT_VA_ARG_COUNT(__VA_ARGS__),
+///         current_time(),
+///         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)
+///     )
+///
+/// log("something {}", "happened");
+/// ```
+/// (note that this macro would need backslashes for multiple lines).
+///
+/// For simpler macros the `fmt_write` macro can be used instead:
+/// ```c
+/// #define log(_format, ...) fmt_write(log_writer, _format __VA_OPT__(,) __VA_ARGS__)
+/// ```
+extern int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...);
+
 /// Implementation for the stdout and stderr printers which handles locking and
 /// adding a newline for the `-ln` variants.  It takes a stream because stdout
 /// and stderr are not const so we can't easily use static variables for them.
 extern int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...);
+
+/// Implementation for the `fmt_panic` macro.
 FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *format, int arg_count, ...);
+
+/// Implementation for the `fmt_format` macro.
 extern fmt_String fmt__format(const char *format, int arg_count, ...);
+
+/// Implementation for the `fmt_sprint` macro, this only exists for C++ builds
+/// which prevent usage of the `FMT_NEW_STRING_WRITER` macro.
 extern int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...);
+
+/// Implementation for the `fmt_fprint` macro.
+extern int fmt__fprint(FILE *stream, const char *format, int arg_count, ...);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -372,72 +413,211 @@ extern int fmt__sprint(char *string, size_t size, const char *format, int arg_co
 /// Returns `true` if the given variable can be printed.
 #define fmt_can_print(x) (FMT__TYPE_ID(x) != fmt__TYPE_UNKNOWN)
 
-#define fmt_with_writer(_writer, _format, ...) \
-    fmt__with_writer(                          \
-        _writer,                               \
-        _format,                               \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)         \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__))   \
+/// Writes formatted data into a buffer.
+///
+/// This macro accepts a ‘writer’, a format string, and a list of arguments.
+/// Arguments will be formatted according to the specified format string and the
+/// result will be passed to the writer.
+///
+/// If you already have a `va_list` with the type IDs and arguments use
+/// `fmt_implementation` instead.
+///
+/// Examples:
+/// ```c
+/// FILE *outf = fopen("output.txt", "w");
+/// fmt_Writer *writer = FMT_NEW_STREAM_WRITER(outf);
+/// fmt_write(writer, "test");
+/// fmt_write(writer, "formatted {}", "arguments");
+/// // File content: "testformatted arguments"
+/// ```
+#define fmt_write(_writer, _format, ...)     \
+    fmt__write(                              \
+        _writer,                             \
+        _format,                             \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
+        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
+/// Prints to the standard output.
+///
+/// Equivalent to the println! macro except that a newline is not printed at the
+/// end of the message.
+///
+/// Note that stdout is frequently line-buffered by default so it may be
+/// necessary to use `fflush(stdout)` to ensure the output is emitted
+/// immediately.
+///
+/// If `FMT_LOCKED_DEFAULT_PRINTERS` is defined this will lock the internal
+/// mutex on each call.
+///
+/// Use `fmt_print` only for the primary output of your program. Use
+/// `fmt_eprint` instead to print error and progress messages.
+///
+/// Examples:
+/// ```c
+/// fmt_print("this ");
+/// fmt_print("will ");
+/// fmt_print("be ");
+/// fmt_print("on ");
+/// fmt_print("the ");
+/// fmt_print("same ");
+/// fmt_print("line ");
+/// fflush(stdout);
+///
+/// fmt_print("this string has a newline, why not choose fmt_println instead?\n");
+/// fflush(stdout);
+/// ```
 #define fmt_print(_format, ...)              \
     fmt__default_printer(                    \
         stdout,                              \
         _format,                             \
         false,                               \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
+/// Prints to the standard output, with a newline.
+///
+/// On all platforms, the newline is the LINE FEED character (`\n`/`U+000A`)
+/// alone (no additional CARRIAGE RETURN (`\r`/`U+000D`)).
+///
+/// If `FMT_LOCKED_DEFAULT_PRINTERS` is defined this will lock the internal
+/// mutex on each call.
+///
+/// Examples:
+/// ```c
+/// fmt_println("hello there!");
+/// fmt_println("format {} arguments", "some");
+/// const char *variable = "some";
+/// fmt_println("format {} arguments", variable);
+/// ```
 #define fmt_println(_format, ...)            \
     fmt__default_printer(                    \
         stdout,                              \
         _format,                             \
         true,                                \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
+/// Prints to the standard error.
+///
+/// Equivalent to the `fmt_print` macro, except that output goes to `stderr`
+/// instead of `stdout`. See `fmt_print` for example usage.
+///
+/// Use `fmt_eprint` only for error and progress messages. Use `fmt_print`
+/// instead for the primary output of your program.
 #define fmt_eprint(_format, ...)             \
     fmt__default_printer(                    \
         stderr,                              \
         _format,                             \
         false,                               \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
+/// Prints to the standard error, with a newline.
+///
+/// Equivalent to the `fmt_println` macro, except that output goes to `stderr`
+/// instead of `stdout`. See `fmt_println` for example usage.
+///
+/// Use `fmt_eprintln` only for error and progress messages. Use `fmt_println`
+/// instead for the primary output of your program.
 #define fmt_eprintln(_format, ...)           \
     fmt__default_printer(                    \
         stderr,                              \
         _format,                             \
         true,                                \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
+/// Accumulates formatted data in an allocated string.
+///
+/// String structure:
+/// ```c
+/// typedef struct {
+///     char *data;
+///     size_t capacity;
+///     size_t size;
+/// } fmt_String;
+/// ```
+///
+/// The `data` field must be released using `free`.
+/// The `capacity` field contains the amount of usable allocated data, actual
+/// allocated size is 1 more byte which is not considered as part of the
+/// capacity so it can always contain the null terminator without needing to
+/// reallocate just to add it.
+/// The `size` field contains the length of the formatted text (without the null
+/// terminator).
+#define fmt_format(_format, ...)             \
+    fmt__format(                             \
+        _format,                             \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
+        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+    )
+
+/// Writes formatted data into an existing buffer.
+/// Panics if more than `n - 1` characters are required, as null terminator is
+/// always added after the formatted data.
+///
+/// Examples:
+/// ```c
+/// char buffer[16];
+/// fmt_sprint(buffer, 16, "Hello {}", "World");
+/// assert(memcmp(buffer, "Hello World", 12) == 0);
+/// ```
 #define fmt_sprint(_string, _n, _format, ...) \
     fmt__sprint(                              \
         (_string),                            \
         (_n),                                 \
         _format,                              \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)        \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)         \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__))  \
     )
 
+/// Aborts the program with an error message.
+///
+/// The error message will look like this: `file:line: message[\n]`.
+/// The newline is only added if the message does not already end with a newline.
+///
+/// The message is formatted as with all the other macros.
+///
+/// Examples:
+/// ```c
+/// fmt_panic("this is a terrible mistake!");
+/// fmt_panic("this is a {} {}", "fancy", "message");
+/// ```
 #define fmt_panic(_format, ...)              \
     fmt__panic(                              \
         __FILE__,                            \
         __LINE__,                            \
          _format,                            \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
-#define fmt_format(_format, ...)             \
-    fmt__format(                             \
+/// Convenience function for writing to a file.
+///
+/// Unlike the default functions for writing to stdout and stderr this is not
+/// affected by `FMT_LOCKED_DEFAULT_PRINTERS`.
+///
+/// Equivalent to:
+/// ```c
+/// fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stream);
+/// fmt_write(writer, format, ...);
+/// ```
+///
+/// Examples:
+/// ```c
+/// FILE *log_file = fopen("log.txt", "w");
+/// fmt_fprint(log_file, "Hello {}\n", "World");
+/// ```
+#define fmt_fprint(_stream, _format, ...)    \
+    fmt__fprint(                             \
+        _stream,                             \
         _format,                             \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
@@ -2046,7 +2226,20 @@ int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va
     return written;
 }
 
-int fmt__with_writer(fmt_Writer *writer, const char *format, int arg_count, ...) {
+int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...) {
+    va_list ap;
+    va_start(ap, arg_count);
+    const int written = fmt_implementation(writer, format, arg_count, ap);
+    va_end(ap);
+    return written;
+}
+
+int fmt__fprint(FILE *stream, const char *format, int arg_count, ...) {
+    fmt_Stream_Writer swriter = {
+        .base = fmt_STREAM_WRITER_FUNCTIONS,
+        .stream = stream,
+    };
+    fmt_Writer *writer = (fmt_Writer *)&swriter;
     va_list ap;
     va_start(ap, arg_count);
     const int written = fmt_implementation(writer, format, arg_count, ap);

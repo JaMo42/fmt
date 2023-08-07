@@ -49,7 +49,7 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
             __LINE__,                            \
             _expected,                           \
             _fmt,                                \
-            FMT__VA_ARG_COUNT(__VA_ARGS__)       \
+            FMT_VA_ARG_COUNT(__VA_ARGS__)       \
             __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
         )) {                                     \
             su_fail();                           \
