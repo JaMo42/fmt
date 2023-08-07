@@ -188,35 +188,38 @@ typedef enum {
 
 #ifdef __cplusplus
 
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char _) { return fmt__TYPE_CHAR; };
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char16_t _) { return fmt__TYPE_UNSIGNED_SHORT; };
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char32_t _) { return fmt__TYPE_UNSIGNED; };
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] wchar_t _) { return fmt__TYPE_WCHAR; };
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] signed char _) { return fmt__TYPE_SIGNED_CHAR; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] short _) { return fmt__TYPE_SHORT; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] int _) { return fmt__TYPE_INT; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] long _) { return fmt__TYPE_LONG; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] long long _) { return fmt__TYPE_LONG_LONG; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned char _) { return fmt__TYPE_UNSIGNED_CHAR; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned short _) { return fmt__TYPE_UNSIGNED_SHORT; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned _) { return fmt__TYPE_UNSIGNED; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned long _) { return fmt__TYPE_UNSIGNED_LONG; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] unsigned long long _) { return fmt__TYPE_UNSIGNED_LONG_LONG; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] float _) { return fmt__TYPE_FLOAT; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] double _) { return fmt__TYPE_DOUBLE; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] bool _) { return fmt__TYPE_BOOL; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char *_) { return fmt__TYPE_STRING; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const char *_) { return fmt__TYPE_STRING; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const char16_t *_) { return fmt__TYPE_STRING_16; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char16_t *_) { return fmt__TYPE_STRING_16; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const char32_t *_) { return fmt__TYPE_STRING_32; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] char32_t *_) { return fmt__TYPE_STRING_32; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] wchar_t *_) { return fmt__TYPE_WSTRING; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const wchar_t *_) { return fmt__TYPE_WSTRING; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] void *_) { return fmt__TYPE_POINTER; }
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] const void *_) { return fmt__TYPE_POINTER; }
+#define FMT_TYPE_ID(_T, _id) \
+    static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] _T _) { return _id; }
+FMT_TYPE_ID(char, fmt__TYPE_CHAR);
+FMT_TYPE_ID(char16_t, fmt__TYPE_UNSIGNED_SHORT;)
+FMT_TYPE_ID(char32_t, fmt__TYPE_UNSIGNED;)
+FMT_TYPE_ID(wchar_t, fmt__TYPE_WCHAR;)
+FMT_TYPE_ID(signed char, fmt__TYPE_SIGNED_CHAR);
+FMT_TYPE_ID(short, fmt__TYPE_SHORT);
+FMT_TYPE_ID(int, fmt__TYPE_INT);
+FMT_TYPE_ID(long, fmt__TYPE_LONG);
+FMT_TYPE_ID(long long, fmt__TYPE_LONG_LONG);
+FMT_TYPE_ID(unsigned char, fmt__TYPE_UNSIGNED_CHAR);
+FMT_TYPE_ID(unsigned short, fmt__TYPE_UNSIGNED_SHORT);
+FMT_TYPE_ID(unsigned, fmt__TYPE_UNSIGNED);
+FMT_TYPE_ID(unsigned long, fmt__TYPE_UNSIGNED_LONG);
+FMT_TYPE_ID(unsigned long long, fmt__TYPE_UNSIGNED_LONG_LONG);
+FMT_TYPE_ID(float, fmt__TYPE_FLOAT);
+FMT_TYPE_ID(double, fmt__TYPE_DOUBLE);
+FMT_TYPE_ID(bool, fmt__TYPE_BOOL);
+FMT_TYPE_ID(char *, fmt__TYPE_STRING);
+FMT_TYPE_ID(const char *, fmt__TYPE_STRING);
+FMT_TYPE_ID(const char16_t *, fmt__TYPE_STRING_16);
+FMT_TYPE_ID(char16_t *, fmt__TYPE_STRING_16);
+FMT_TYPE_ID(const char32_t *, fmt__TYPE_STRING_32);
+FMT_TYPE_ID(char32_t *, fmt__TYPE_STRING_32);
+FMT_TYPE_ID(wchar_t *, fmt__TYPE_WSTRING);
+FMT_TYPE_ID(const wchar_t *, fmt__TYPE_WSTRING);
+FMT_TYPE_ID(void *, fmt__TYPE_POINTER);
+FMT_TYPE_ID(const void *, fmt__TYPE_POINTER);
 template<class Else>
-static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] Else _) { return fmt__TYPE_UNKNOWN; }
+FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
+#undef FMT_TYPE_ID
 
 #else // __cplusplus
 
@@ -413,13 +416,13 @@ extern int fmt__sprint(char *string, size_t size, const char *format, int arg_co
         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
     )
 
-#define fmt_sprint(_string, _n, _format, ...)   \
-    fmt__sprint(                                \
-        (_string),                              \
-        (_n),                                   \
-        _format,                                \
-        FMT__VA_ARG_COUNT(__VA_ARGS__)          \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__))    \
+#define fmt_sprint(_string, _n, _format, ...) \
+    fmt__sprint(                              \
+        (_string),                            \
+        (_n),                                 \
+        _format,                              \
+        FMT__VA_ARG_COUNT(__VA_ARGS__)        \
+        __VA_OPT__(, FMT__ARGS(__VA_ARGS__))  \
     )
 
 #define fmt_panic(_format, ...)              \
