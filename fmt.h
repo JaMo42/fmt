@@ -2131,12 +2131,13 @@ int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ..
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = string,
         .at = string,
-        .end = string + size,
+        .end = string + size - 1,
     };
     va_list ap;
     va_start(ap, arg_count);
     const int written = fmt_implementation((fmt_Writer *)&writer, format, arg_count, ap);
     va_end(ap);
+    string[written] = '\0';
     return written;
 }
 
