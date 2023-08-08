@@ -319,6 +319,13 @@ typedef struct {
     fmt_String string;
 } fmt_Allocating_String_Writer;
 
+typedef struct {
+    const fmt_Writer base;
+    size_t bytes;
+    size_t characters;
+    size_t width;
+} fmt_Metric_Writer;
+
 int fmt__write_stream_byte(fmt_Writer *p_self, char byte);
 int fmt__write_stream_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_stream_str (fmt_Writer *p_self, const char *str);
@@ -330,6 +337,10 @@ int fmt__write_string_str (fmt_Writer *p_self, const char *str);
 int fmt__write_alloc_byte(fmt_Writer *p_self, char byte);
 int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_alloc_str (fmt_Writer *p_self, const char *str);
+
+int fmt__write_metric_byte(fmt_Writer *p_self, char byte);
+int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n);
+int fmt__write_metric_str (fmt_Writer *p_self, const char *str);
 
 static const fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_stream_byte,
@@ -347,6 +358,12 @@ static const fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_alloc_byte,
     .write_data = fmt__write_alloc_data,
     .write_str = fmt__write_alloc_str,
+};
+
+static const fmt_Writer fmt_METRIC_WRITER_FUNCTIONS = {
+    .write_byte = fmt__write_metric_byte,
+    .write_data = fmt__write_metric_data,
+    .write_str = fmt__write_metric_str,
 };
 
 // Note: these macros don't work in C++ because you can't take the address of
@@ -831,6 +848,15 @@ int fmt__write_alloc_str(fmt_Writer *p_self, const char *str) {
     return fmt__write_alloc_data(p_self, str, strlen(str));
 }
 
+
+
+// fmt__write_metric_byte and fmt__write_metric_data are defined after the
+// unicode utilities on which they rely.
+
+int fmt__write_metric_str (fmt_Writer *p_self, const char *str) {
+    return fmt__write_metric_data(p_self, str, strlen(str));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Unicode utilities
 ////////////////////////////////////////////////////////////////////////////////
@@ -863,6 +889,12 @@ static int fmt__utf8_codepoint_length(fmt_char8_t leading_byte) {
 static bool fmt__is_valid_codepoint(char32_t codepoint) {
     const bool is_surrogate = codepoint >= 0xd800 && codepoint <= 0xdfff;
     return !is_surrogate && codepoint <= FMT_MAX_CODEPOINT;
+}
+
+/// Returns the display width of an ascii character.
+static int fmt__ascii_display_width(char ch_) {
+    unsigned ch = ch_;
+    return !(ch < 32 || (ch >= 0x7f && ch < 0xa0));
 }
 
 /// Returns the display width of a character.
@@ -1113,6 +1145,23 @@ static char32_t fmt__utf8_peek_ascii(const char *str, int index) {
 
 static bool fmt__starts_with(const char *str, const char *with, int len) {
     return memcmp(str, with, len) == 0;
+}
+
+int fmt__write_metric_byte(fmt_Writer *p_self, char byte) {
+    fmt_Metric_Writer *self = (fmt_Metric_Writer *)p_self;
+    ++self->bytes;
+    ++self->characters;
+    self->width += fmt__ascii_display_width(byte);
+    return 1;
+}
+
+int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n) {
+    fmt_Metric_Writer *self = (fmt_Metric_Writer *)p_self;
+    self->bytes += n;
+    const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(data, n, n);
+    self->characters += width_and_length.second;
+    self->width += width_and_length.first;
+    return n;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2213,6 +2262,42 @@ static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, cons
     return fmt__print_int(writer, fs, (uintptr_t)ptr, 0);
 }
 
+static int fmt__write_time_sized(
+    fmt_Writer *writer,
+    const char *format,
+    size_t format_size,
+    const struct tm *datetime
+);
+
+static int fmt__print_time(
+    fmt_Writer *writer,
+    fmt_Format_Specifier *fs,
+    const struct tm *datetime,
+    const char *format,
+    size_t format_length
+) {
+    fmt_Metric_Writer metric = {
+        .base = fmt_METRIC_WRITER_FUNCTIONS,
+        .bytes = 0,
+        .width = 0,
+    };
+    fmt__write_time_sized((fmt_Writer*)&metric, format, format_length, datetime);
+
+    int to_print = metric.characters;
+    if (fs->precision > 0 && fs->precision < to_print) {
+        to_print = fs->precision;
+    }
+
+    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - metric.width, fs->align);
+
+    int written = 0;
+    written += fmt__pad(writer, pad.first, fs->fill);
+    written += fmt__write_time_sized(writer, format, format_length, datetime);
+    written += fmt__pad(writer, pad.second, fs->fill);
+
+    return written;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Time
 ////////////////////////////////////////////////////////////////////////////////
@@ -2512,31 +2597,7 @@ t_bool:
     return fmt__print_bool(writer, &fs, value.v_bool);
 
 t_time:
-    // We could avoid this allocation by using a writer that only records the
-    // width of the formatted time string and then use that in a printing
-    // function for padding (but how would precision work with this? althogh
-    // having the precision for this is pretty useless anyways).  This is
-    // however a lot simpler to write.
-    enum { INIT_CAP = 16 };
-    fmt_Allocating_String_Writer time_writer = (fmt_Allocating_String_Writer) {
-        .base = fmt_ALLOC_WRITER_FUNCTIONS,
-        .string = (fmt_String) {
-            .data = (char *)malloc(INIT_CAP + 1),
-            .capacity = INIT_CAP,
-            .size = 0,
-        },
-    };
-    fmt__write_time_sized((fmt_Writer*)&time_writer, time_format, length, value.v_time);
-    if (fs.precision < 0) {
-        length = time_writer.string.size;
-    } else {
-        length = fmt__utf8_chars_len(time_writer.string.data, fs.precision);
-    }
-    const int written = fmt__print_utf8(
-        writer, &fs, time_writer.string.data, length
-    );
-    free(time_writer.string.data);
-    return written;
+    return fmt__print_time(writer, &fs, value.v_time, time_format, length);
 
 t_fmt_string:
     return fmt__print_utf8(
