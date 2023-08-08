@@ -237,6 +237,17 @@ su_module_d(basic_printing, "basic printing", {
         expect("ABC", "{P:}", (void*)0xabc);
         expect("ABC", "{P:}", (char*)0xabc);
     })
+
+    su_test("fmt_String", {
+        fmt_String string = ((fmt_String) {
+            .data = "Hello World",
+            .capacity = 0,
+            .size = 11
+        });
+        expect("Hello World", "{}", string);
+        string.size = 5;
+        expect("Hello World", "{} World", string);
+    })
 })
 
 su_module(formatting, {

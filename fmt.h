@@ -176,6 +176,7 @@ typedef enum {
     fmt__TYPE_STRING_16,
     fmt__TYPE_STRING_32,
     fmt__TYPE_POINTER,
+    fmt__TYPE_FMT_STRING,
 } fmt_Type_Id;
 
 #ifdef _MSC_VER
@@ -249,6 +250,7 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         const wchar_t *: fmt__TYPE_WSTRING, \
         void *: fmt__TYPE_POINTER, \
         const void *: fmt__TYPE_POINTER, \
+        fmt_String: fmt__TYPE_FMT_STRING, \
         default: fmt__TYPE_UNKNOWN \
     )
 
@@ -381,11 +383,6 @@ extern int fmt_implementation(fmt_Writer *writer, const char *format, int arg_co
 /// log("something {}", "happened");
 /// ```
 /// (note that this macro would need backslashes for multiple lines).
-///
-/// For simpler macros the `fmt_write` macro can be used instead:
-/// ```c
-/// #define log(_format, ...) fmt_write(log_writer, _format __VA_OPT__(,) __VA_ARGS__)
-/// ```
 extern int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...);
 
 /// Implementation for the stdout and stderr printers which handles locking and
@@ -2055,6 +2052,7 @@ static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifie
         double v_float;
         const void *v_pointer;
         struct tm v_time;
+        fmt_String v_fmt_string;
     } value;
     int length = 0;
     char sign = 0;
@@ -2122,10 +2120,12 @@ static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifie
 
         FMT_TID_CASE(fmt__TYPE_BOOL, v_bool, int, t_bool)
 
-        FMT_TID_CASE(fmt__TYPE_POINTER, v_pointer, const void *, t_pointer);
+        FMT_TID_CASE(fmt__TYPE_POINTER, v_pointer, const void *, t_pointer)
 
         FMT_TID_CASE(fmt__TYPE_FLOAT, v_float, double, t_float)
         FMT_TID_CASE(fmt__TYPE_DOUBLE, v_float, double, t_float)
+
+        FMT_TID_CASE(fmt__TYPE_FMT_STRING, v_fmt_string, fmt_String, t_fmt_string)
 
         case fmt__TYPE_UNKNOWN:
             // Unknown is also used for all pointers we don't specify an explicit
@@ -2204,6 +2204,11 @@ t_float:
 
 t_bool:
     return fmt__print_bool(writer, &fs, value.v_bool);
+
+t_fmt_string:
+    return fmt__print_utf8(
+        writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
+    );
 }
 
 int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap) {
