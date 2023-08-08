@@ -60,6 +60,8 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_DEFAULT_FLOAT_PRECISION 3
 #endif
 
+#define FMT_TIME_DELIM '%'
+
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
 ////////////////////////////////////////////////////////////////////////////////
@@ -703,6 +705,16 @@ static char32_t fmt__va_get_character(va_list ap) {
     }
 }
 
+static const char * fmt__va_get_utf8_string(va_list ap) {
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
+    switch (type) {
+    case fmt__TYPE_STRING:
+        return va_arg(ap, const char *);
+    default:
+        fmt_panic("expected string");
+    }
+}
+
 static const char *fmt__valid_display_types(fmt_Type_Id type) {
     switch (type) {
         case fmt__TYPE_CHAR:
@@ -1238,45 +1250,14 @@ static const char * fmt__parse_int(
     return format_specifier;
 }
 
-static const char * fmt__parse_specifier(
+static const char * fmt__parse_specifier_after_colon(
     const char *format_specifier,
     fmt_Format_Specifier *out,
-    fmt_Type_Id type,
     int specifier_number,
     int *arg_count,
     va_list ap
 ) {
     int parsed;
-    fmt__format_specifier_default(out);
-    ++format_specifier;  // skip '{'
-    if (*format_specifier == '}') {
-        return ++format_specifier;
-    }
-    if (*format_specifier != ':') {
-        // Display type
-        parsed = *format_specifier++;
-        const char *valid = fmt__valid_display_types(type);
-        if (strchr(valid, parsed) != NULL) {
-            out->type = parsed;
-        } else {
-            fmt_panic(
-                "invalid display type '{}' in specifier {}, expected one of: {}",
-                (char)parsed,
-                specifier_number,
-                valid
-            );
-        }
-    }
-    if (*format_specifier == '}') {
-        return ++format_specifier;
-    } else if (*format_specifier == ':') {
-        ++format_specifier;
-    } else {
-        fmt_panic(
-            "expected : or } after display type in format specifier {}",
-            specifier_number
-        );
-    }
     // Alignment
     if ((parsed = fmt__parse_alignment(*format_specifier))) {
         // Only alignemnt
@@ -1361,6 +1342,51 @@ static const char * fmt__parse_specifier(
         fmt_panic("format specifier {} is invalid", specifier_number);
     }
     return format_specifier;
+
+}
+
+static const char * fmt__parse_specifier(
+    const char *format_specifier,
+    fmt_Format_Specifier *out,
+    fmt_Type_Id type,
+    int specifier_number,
+    int *arg_count,
+    va_list ap
+) {
+    int parsed;
+    fmt__format_specifier_default(out);
+    ++format_specifier;  // skip '{'
+    if (*format_specifier == '}') {
+        return ++format_specifier;
+    }
+    if (*format_specifier != ':') {
+        // Display type
+        parsed = *format_specifier++;
+        const char *valid = fmt__valid_display_types(type);
+        if (strchr(valid, parsed) != NULL) {
+            out->type = parsed;
+        } else {
+            fmt_panic(
+                "invalid display type '{}' in specifier {}, expected one of: {}",
+                (char)parsed,
+                specifier_number,
+                valid
+            );
+        }
+    }
+    if (*format_specifier == '}') {
+        return ++format_specifier;
+    } else if (*format_specifier == ':') {
+        ++format_specifier;
+    } else {
+        fmt_panic(
+            "expected : or } after display type in format specifier {}",
+            specifier_number
+        );
+    }
+    return fmt__parse_specifier_after_colon(
+        format_specifier, out, specifier_number, arg_count, ap
+    );
 }
 
 static const char * fmt__parse_time_specifier(
@@ -1428,6 +1454,60 @@ static const char * fmt__parse_time_specifier(
         fmt_panic("time format specifier {} is invalid", specifier_number);
     }
     return format_specifier;
+}
+
+static const char * fmt__parse_embedded_time_specifier(
+    const char *format_specifier,
+    fmt_Format_Specifier *out,
+    const char **time_string_out,
+    int *time_string_length_out,
+    int specifier_number,
+    int *arg_count,
+    va_list ap
+) {
+    fmt__format_specifier_default(out);
+    ++format_specifier;  // skip '{'
+    if (*format_specifier == '}') {
+        *time_string_out = FMT_DEFAULT_TIME_FORMAT;
+        *time_string_length_out = sizeof(FMT_DEFAULT_TIME_FORMAT) - 1;
+        return ++format_specifier;
+    }
+    if (*format_specifier == FMT_TIME_DELIM) {
+        // we need a padding character here for the {} and {...} cases since the
+        // mainloop would otherwise think it's a {{ and ignore the specifier.
+        ++format_specifier;
+        const char *time_string;
+        if (format_specifier[0] == '{' && format_specifier[1] == '}') {
+            time_string = fmt__va_get_utf8_string(ap);
+            *time_string_out = time_string;
+            *time_string_length_out = strlen(time_string);
+            format_specifier += 2;
+        } else {
+            time_string = format_specifier;
+            format_specifier = strchr(time_string, FMT_TIME_DELIM);
+            if (!format_specifier) {
+                fmt_panic(
+                    "undelimited time format string in format specifier {}",
+                    specifier_number
+                );
+            }
+            *time_string_out = time_string;
+            *time_string_length_out = format_specifier - time_string;
+            ++format_specifier; // skip closing delimiter
+        }
+    } else if (*format_specifier == ':') {
+        *time_string_out = FMT_DEFAULT_TIME_FORMAT;
+        *time_string_length_out = sizeof(FMT_DEFAULT_TIME_FORMAT) - 1;
+        ++format_specifier;
+    } else {
+        fmt_panic(
+            "expected : or } after display type in format specifier {}",
+            specifier_number
+        );
+    }
+    return fmt__parse_specifier_after_colon(
+        format_specifier, out, specifier_number, arg_count, ap
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2153,13 +2233,14 @@ static int fmt__print_time_specifier(
                                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
     fmt_Format_Specifier spec;
-    *format_specifier = fmt__parse_time_specifier(
-        *format_specifier, &spec, specifier_number
-    );
     union {
         unsigned long long v_unsigned;
         const char *v_string;
     } value;
+
+    *format_specifier = fmt__parse_time_specifier(
+        *format_specifier, &spec, specifier_number
+    );
 
     switch (spec.type) {
     case 'H': value.v_unsigned = datetime->tm_hour; goto t_unsigned;
@@ -2243,6 +2324,7 @@ static int fmt__print_specifier(
     } value;
     int length = 0;
     char sign = 0;
+    const char *time_format;
 
     #define FMT_PARSE_FS()                                                \
         *format_specifier = fmt__parse_specifier(                         \
@@ -2314,9 +2396,9 @@ static int fmt__print_specifier(
 
         case fmt__TYPE_TIME:
             value.v_time = va_arg(ap, struct tm *);
-            //*format_specifier = fmt__parse_time_specifier(
-            //    *format_specifier, &fs, specifier_number, arg_count, ap
-            //);
+            *format_specifier = fmt__parse_embedded_time_specifier(
+                *format_specifier, &fs, &time_format, &length, specifier_number, arg_count, ap
+            );
             goto t_time;
 
         FMT_TID_CASE(fmt__TYPE_FMT_STRING, v_fmt_string, fmt_String, t_fmt_string)
@@ -2400,7 +2482,36 @@ t_bool:
     return fmt__print_bool(writer, &fs, value.v_bool);
 
 t_time:
-    fmt_panic("unimplemented");
+    // We could avoid this allocation by using a writer that only records the
+    // width of the formatted time string and then use that in a printing
+    // function for padding (but how would precision work with this? althogh
+    // having the precision for this is pretty useless anyways).  This is
+    // however a lot simpler to write.
+    enum { INIT_CAP = 16 };
+    fmt_Allocating_String_Writer time_writer = (fmt_Allocating_String_Writer) {
+        .base = fmt_ALLOC_WRITER_FUNCTIONS,
+        .string = (fmt_String) {
+            .data = (char *)malloc(INIT_CAP + 1),
+            .capacity = INIT_CAP,
+            .size = 0,
+        },
+    };
+    // We need a null-terminated format string...
+    char *time_format_sz = malloc(length + 1);
+    memcpy(time_format_sz, time_format, length);
+    time_format_sz[length] = '\0';
+    fmt_write_time((fmt_Writer*)&time_writer, time_format_sz, value.v_time);
+    if (fs.precision < 0) {
+        length = time_writer.string.size;
+    } else {
+        length = fmt__utf8_chars_len(time_writer.string.data, fs.precision);
+    }
+    const int written = fmt__print_utf8(
+        writer, &fs, time_writer.string.data, length
+    );
+    free(time_format_sz);
+    free(time_writer.string.data);
+    return written;
 
 t_fmt_string:
     return fmt__print_utf8(

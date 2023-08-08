@@ -534,21 +534,33 @@ su_module(formatting, {
 })
 
 su_module(datetime, {
-    const struct tm datetime_value = ((struct tm) {
-        .tm_sec = 1,
-        .tm_min = 2,
-        .tm_hour = 3,
-        .tm_mday = 4,
-        .tm_mon = 5,
-        .tm_year = 123,
-        .tm_wday = 6,
-        .tm_yday = 7,
-        .tm_isdst = true,
-    });
+    struct tm datetime_value;
+    memset(&datetime_value, 0, sizeof(struct tm));
+    datetime_value.tm_sec = 1;
+    datetime_value.tm_min = 2;
+    datetime_value.tm_hour = 3;
+    datetime_value.tm_mday = 4;
+    datetime_value.tm_mon = 5;
+    datetime_value.tm_year = 123;
+    datetime_value.tm_wday = 6;
+    datetime_value.tm_yday = 7;
+    datetime_value.tm_isdst = false; // daylight savings
     const struct tm *datetime = &datetime_value;
 
     su_test("basic time printing", {
         expect_time("Sun Jun 4 03:02:01 2023", "{a} {b} {d} {H}:{M}:{S} {Y}", datetime);
+    })
+
+    su_test("embedded time strings", {
+        expect("Hello Sun Jun 4 03:02:01 2023 World", "Hello {} World", datetime);
+        expect("Hello 03:02:01 World", "Hello {%{}} World", datetime, "{H}:{M}:{S}");
+        expect("Hello 03:02:01 World", "Hello {%{H}:{M}:{S}%} World", datetime);
+    })
+
+    su_test("formatting", {
+    })
+
+    su_test("embedded formatting", {
     })
 })
 
