@@ -548,8 +548,12 @@ su_module(datetime, {
     const struct tm *datetime = &datetime_value;
 
     su_test("basic time printing", {
-        expect_time("Sun Jun 4 03:02:01 2023", "{a} {b} {d} {H}:{M}:{S} {Y}", datetime);
+        expect_time("Sat Jun 4 03:02:01 2023", "{a} {b} {d:0} {H}:{M}:{S} {Y}", datetime);
         expect_time("007", "{j}", datetime);
+        expect_time("23", "{y}", datetime);
+        expect_time("7", "{u}", datetime);
+        expect_time("6", "{w}", datetime);
+        expect_time("04", "{d}", datetime);
         expect_time("03:02:01 AM", "{r}", datetime);
         expect_time("03:02", "{R}", datetime);
         expect_time("03:02:01", "{T}", datetime);
@@ -573,7 +577,7 @@ su_module(datetime, {
     })
 
     su_test("embedded time strings", {
-        expect("Hello Sun Jun 4 03:02:01 2023 World", "Hello {} World", datetime);
+        expect("Hello Sat Jun 4 03:02:01 2023 World", "Hello {} World", datetime);
         expect("Hello 03:02:01 World", "Hello {%{}} World", datetime, "{H}:{M}:{S}");
         expect("Hello 03:02:01 World", "Hello {%{H}:{M}:{S}%} World", datetime);
     })

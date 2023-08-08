@@ -1,5 +1,10 @@
 #ifndef FMT_H
 #define FMT_H
+
+#ifdef _MSC_VER
+#  define FMT_NO_LANGINFO
+#endif
+
 #include <stddef.h>
 #if __STDC_VERSION__ <= 201710L
 #  include <stdbool.h>
@@ -14,6 +19,10 @@
 #include <uchar.h>
 #include <math.h>
 #include <time.h>
+#include <locale.h>
+#ifndef FMT_NO_LANGINFO
+#  include <langinfo.h>
+#endif
 
 // `char8_t` is only available since C23 but we also want to support C11 so
 // since we need our typedef anyways we never use `char8_t` since we wouldn't
@@ -30,7 +39,7 @@ typedef uint_least8_t fmt_char8_t;
 #endif
 
 #ifndef FMT_DEFAULT_TIME_FORMAT
-#  define FMT_DEFAULT_TIME_FORMAT "{a} {b} {d} {H}:{M}:{S} {Y}"
+#  define FMT_DEFAULT_TIME_FORMAT "{a} {b} {d:0} {H}:{M}:{S} {Y}"
 #endif
 
 #ifndef FMT_LOWER_INF
@@ -1206,8 +1215,8 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
 }
 
 static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char field) {
-    static const char INTEGER_FIELDS[] = "HMSIdyYjuw";
-    spec->fill = strchr(INTEGER_FIELDS, field) ? '0' : ' ';
+    static const char ZERO_PADDED[] = "HMSIdyYjuwm";
+    spec->fill = strchr(ZERO_PADDED, field) ? '0' : ' ';
     spec->align = fmt_ALIGN_RIGHT;
     spec->width = 0;
     spec->precision = -1;
@@ -1217,6 +1226,9 @@ static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char 
         case 'S':
         case 'I':
         case 'y':
+        case 'e':
+        case 'm':
+        case 'd':
             spec->width = 2;
             break;
 
@@ -1455,7 +1467,7 @@ static const char * fmt__parse_time_specifier(
     fmt_Format_Specifier *out,
     int specifier_number
 ) {
-    static const char *const ALL_FIELDS = "HMSaAbBdYIjpPrRTcuw";
+    static const char *const ALL_FIELDS = "HMSaAbBdyYIjpPrRTuwcexXm";
     int parsed;
     ++format_specifier;  // skip '{'
     if (strchr(ALL_FIELDS, *format_specifier)) {
@@ -2315,25 +2327,64 @@ static int fmt__print_time(
 // Time
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifndef FMT_NO_LANGINFO
+static void fmt__translate_strftime(const char *strftime, char *translated) {
+    for (; *strftime; ++strftime) {
+        switch (*strftime) {
+        case '%':
+            if (*++strftime == '%') {
+                // TODO: format specifiers
+                *translated++ = '%';
+            } else {
+                *translated++ = '{';
+                *translated++ = *strftime;
+                *translated++ = '}';
+            }
+            break;
+
+        case '{':
+            *translated++ = '{';
+            *translated++ = '{';
+            break;
+
+        case '}':
+            *translated++ = '}';
+            *translated++ = '}';
+            break;
+
+        default:
+            *translated++ = *strftime;
+            break;
+        }
+    }
+    *translated = '\0';
+}
+#endif
+
 static int fmt__print_time_specifier(
     fmt_Writer *writer,
     const char **format_specifier,
     int specifier_number,
     const struct tm *datetime
 ) {
+#ifdef FMT_NO_LANGINFO
     static const char *LONG_DAYS[]
-        = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
-    static const char *SHORT_DAYS[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+        = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    static const char *SHORT_DAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
     static const char *LONG_MONTHS[]
         = {"January", "February", "March", "April", "May", "June",
            "July", "August", "September", "October", "November", "December"};
     static const char *SHORT_MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+#endif
 
     fmt_Format_Specifier spec;
     union {
         unsigned long long v_unsigned;
         const char *v_string;
+#ifndef FMT_NO_LANGINFO
+        nl_item v_locale_item;
+#endif
     } value;
 
     *format_specifier = fmt__parse_time_specifier(
@@ -2350,23 +2401,47 @@ static int fmt__print_time_specifier(
     case 'p': value.v_string = datetime->tm_hour < 12 ? "AM" : "PM"; goto t_string;
     case 'P': value.v_string = datetime->tm_hour < 12 ? "am" : "pm"; goto t_string;
 
-    case 'u': value.v_unsigned = datetime->tm_wday + 1; goto t_string;
-    case 'w': value.v_unsigned = datetime->tm_wday; goto t_string;
+    case 'u': value.v_unsigned = datetime->tm_wday + 1; goto t_unsigned;
+    case 'w': value.v_unsigned = datetime->tm_wday; goto t_unsigned;
+#ifdef FMT_NO_LANGINFO
     case 'a': value.v_string = SHORT_DAYS[datetime->tm_wday]; goto t_string;
     case 'A': value.v_string = LONG_DAYS[datetime->tm_wday]; goto t_string;
+#else
+    case 'a': value.v_string = nl_langinfo(ABDAY_1 + datetime->tm_wday); goto t_string;
+    case 'A': value.v_string = nl_langinfo(DAY_1 + datetime->tm_wday); goto t_string;
+#endif
 
+    case 'm': value.v_unsigned = datetime->tm_mon + 1; goto t_unsigned;
+#ifdef FMT_NO_LANGINFO
     case 'b': value.v_string = SHORT_MONTHS[datetime->tm_mon]; goto t_string;
     case 'B': value.v_string = LONG_MONTHS[datetime->tm_mon]; goto t_string;
-
+#else
+    case 'b': value.v_string = nl_langinfo(ABMON_1 + datetime->tm_mon); goto t_string;
+    case 'B': value.v_string = nl_langinfo(MON_1 + datetime->tm_mon); goto t_string;
+#endif
     case 'd': value.v_unsigned = datetime->tm_mday; goto t_unsigned;
+    case 'e': value.v_unsigned = datetime->tm_mday; goto t_unsigned;
 
     case 'y': value.v_unsigned = (1900 + datetime->tm_year) % 100; goto t_unsigned;
     case 'Y': value.v_unsigned = 1900 + datetime->tm_year; goto t_unsigned;
     case 'j': value.v_unsigned = datetime->tm_yday; goto t_unsigned;
 
-    case 'r': value.v_string = "{I}:{M}:{S} {p}"; goto t_group;
     case 'R': value.v_string = "{H}:{M}"; goto t_group;
     case 'T': value.v_string = "{H}:{M}:{S}"; goto t_group;
+
+#ifdef FMT_NO_LANGINFO
+    case 'c': value.v_string = "{a} {b} {e} {H}:{M}:{S} {Y}"; goto t_group;
+    case 'r': value.v_string = "{I}:{M}:{S} {p}"; goto t_group;
+    // Note: the POSIX locale would be '{m}/{d}/{y}' because formats that make
+    // sense are illegal in America
+    case 'x': value.v_string = "{d}/{m}/{y}"; goto t_group;
+    case 'X': value.v_string = "{H}:{M}:{S}"; goto t_group;
+#else
+    case 'c': value.v_locale_item = D_T_FMT; goto t_locale_group;
+    case 'r': value.v_locale_item = T_FMT_AMPM; goto t_locale_group;
+    case 'x': value.v_locale_item = D_FMT; goto t_locale_group;
+    case 'X': value.v_locale_item = T_FMT; goto t_locale_group;
+#endif
     }
 
     fmt_panic("unreachable");
@@ -2374,6 +2449,16 @@ static int fmt__print_time_specifier(
 t_unsigned:
     spec.type = 'd';
     return fmt__print_int(writer, &spec, value.v_unsigned, 0);
+
+#ifndef FMT_NO_LANGINFO
+t_locale_group:
+    // TODO: fit size
+    char translated[32];
+    value.v_string = nl_langinfo(value.v_locale_item);
+    fmt__translate_strftime(value.v_string, translated);
+    value.v_string = translated;
+    /* fallthrough */
+#endif
 
 t_group:
     // TODO: fit size
