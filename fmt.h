@@ -2275,6 +2275,36 @@ t_string:
     return fmt__print_utf8(writer, &spec, value.v_string, length);
 }
 
+static int fmt__write_time_sized(
+    fmt_Writer *writer,
+    const char *format,
+    size_t format_size,
+    const struct tm *datetime
+) {
+    int written = 0;
+    const char *open_bracket = format;
+    int specifier_number = 1;
+    const char *last_format;
+    while (open_bracket) {
+        if ((open_bracket = memchr(format, '{', format_size)) != NULL) {
+            last_format = format;
+            written += writer->write_data(writer, format, open_bracket - format);
+            if (open_bracket[1] == '{') {
+                format = open_bracket;
+            } else {
+                written += fmt__print_time_specifier(
+                    writer, &open_bracket, specifier_number++, datetime
+                );
+                format = open_bracket;
+            }
+            format_size -= format - last_format;
+        } else if (format_size) {
+            written += writer->write_data(writer, format, format_size);
+        }
+    }
+    return written;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Core functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -2496,11 +2526,7 @@ t_time:
             .size = 0,
         },
     };
-    // We need a null-terminated format string...
-    char *time_format_sz = malloc(length + 1);
-    memcpy(time_format_sz, time_format, length);
-    time_format_sz[length] = '\0';
-    fmt_write_time((fmt_Writer*)&time_writer, time_format_sz, value.v_time);
+    fmt__write_time_sized((fmt_Writer*)&time_writer, time_format, length, value.v_time);
     if (fs.precision < 0) {
         length = time_writer.string.size;
     } else {
@@ -2509,7 +2535,6 @@ t_time:
     const int written = fmt__print_utf8(
         writer, &fs, time_writer.string.data, length
     );
-    free(time_format_sz);
     free(time_writer.string.data);
     return written;
 
