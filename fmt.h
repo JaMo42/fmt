@@ -1206,7 +1206,7 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
 }
 
 static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char field) {
-    static const char INTEGER_FIELDS[] = "HMSdY";
+    static const char INTEGER_FIELDS[] = "HMSIdyYjuw";
     spec->fill = strchr(INTEGER_FIELDS, field) ? '0' : ' ';
     spec->align = fmt_ALIGN_RIGHT;
     spec->width = 0;
@@ -1215,9 +1215,21 @@ static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char 
         case 'H':
         case 'M':
         case 'S':
+        case 'I':
+        case 'y':
             spec->width = 2;
             break;
+
+        case 'j':
+            spec->width = 3;
+            break;
     }
+    // We don't care about these values but since we still use the normal writing
+    // functions we still need to default them so they don't cause problems.
+    spec->sign = fmt_SIGN_NEGATIVE;
+    spec->alternate_form = false;
+    spec->zero_pad = false;
+    spec->group = 0;
 }
 
 static int fmt__parse_alignment(char ch) {
@@ -1443,7 +1455,7 @@ static const char * fmt__parse_time_specifier(
     fmt_Format_Specifier *out,
     int specifier_number
 ) {
-    static const char *const ALL_FIELDS = "HMSaAbBdY";
+    static const char *const ALL_FIELDS = "HMSaAbBdYIjpPrRTcuw";
     int parsed;
     ++format_specifier;  // skip '{'
     if (strchr(ALL_FIELDS, *format_specifier)) {
@@ -2279,6 +2291,7 @@ static int fmt__print_time(
     fmt_Metric_Writer metric = {
         .base = fmt_METRIC_WRITER_FUNCTIONS,
         .bytes = 0,
+        .characters = 0,
         .width = 0,
     };
     fmt__write_time_sized((fmt_Writer*)&metric, format, format_length, datetime);
@@ -2332,6 +2345,13 @@ static int fmt__print_time_specifier(
     case 'M': value.v_unsigned = datetime->tm_min; goto t_unsigned;
     case 'S': value.v_unsigned = datetime->tm_sec; goto t_unsigned;
 
+    case 'I': value.v_unsigned = datetime->tm_hour % 12 ?: 12; goto t_unsigned;
+    // strftime uses lowercase p for upper case strings and vice versa...
+    case 'p': value.v_string = datetime->tm_hour < 12 ? "AM" : "PM"; goto t_string;
+    case 'P': value.v_string = datetime->tm_hour < 12 ? "am" : "pm"; goto t_string;
+
+    case 'u': value.v_unsigned = datetime->tm_wday + 1; goto t_string;
+    case 'w': value.v_unsigned = datetime->tm_wday; goto t_string;
     case 'a': value.v_string = SHORT_DAYS[datetime->tm_wday]; goto t_string;
     case 'A': value.v_string = LONG_DAYS[datetime->tm_wday]; goto t_string;
 
@@ -2340,7 +2360,13 @@ static int fmt__print_time_specifier(
 
     case 'd': value.v_unsigned = datetime->tm_mday; goto t_unsigned;
 
+    case 'y': value.v_unsigned = (1900 + datetime->tm_year) % 100; goto t_unsigned;
     case 'Y': value.v_unsigned = 1900 + datetime->tm_year; goto t_unsigned;
+    case 'j': value.v_unsigned = datetime->tm_yday; goto t_unsigned;
+
+    case 'r': value.v_string = "{I}:{M}:{S} {p}"; goto t_group;
+    case 'R': value.v_string = "{H}:{M}"; goto t_group;
+    case 'T': value.v_string = "{H}:{M}:{S}"; goto t_group;
     }
 
     fmt_panic("unreachable");
@@ -2348,6 +2374,23 @@ static int fmt__print_time_specifier(
 t_unsigned:
     spec.type = 'd';
     return fmt__print_int(writer, &spec, value.v_unsigned, 0);
+
+t_group:
+    // TODO: fit size
+    char buf[32];
+    fmt_String_Writer group_writer = {
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = buf,
+        .at = buf,
+        .end = buf + sizeof(buf),
+    };
+    const char *group_format_specifier = value.v_string;
+    const int end = fmt_write_time(
+        (fmt_Writer *)&group_writer, group_format_specifier, datetime
+    );
+    buf[end] = '\0';
+    value.v_string = buf;
+    /* fallthrough */
 
 t_string:
     spec.type = 's';
@@ -2360,6 +2403,8 @@ t_string:
     return fmt__print_utf8(writer, &spec, value.v_string, length);
 }
 
+// Equivalent to `fmt_write_time` but the format has an explicit size and does
+// not need to be null-terminated.
 static int fmt__write_time_sized(
     fmt_Writer *writer,
     const char *format,
@@ -2371,7 +2416,7 @@ static int fmt__write_time_sized(
     int specifier_number = 1;
     const char *last_format;
     while (open_bracket) {
-        if ((open_bracket = memchr(format, '{', format_size)) != NULL) {
+        if ((open_bracket = (const char *)memchr(format, '{', format_size)) != NULL) {
             last_format = format;
             written += writer->write_data(writer, format, open_bracket - format);
             if (open_bracket[1] == '{') {

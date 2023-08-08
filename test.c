@@ -549,6 +549,27 @@ su_module(datetime, {
 
     su_test("basic time printing", {
         expect_time("Sun Jun 4 03:02:01 2023", "{a} {b} {d} {H}:{M}:{S} {Y}", datetime);
+        expect_time("007", "{j}", datetime);
+        expect_time("03:02:01 AM", "{r}", datetime);
+        expect_time("03:02", "{R}", datetime);
+        expect_time("03:02:01", "{T}", datetime);
+    })
+
+    su_test("12 hour clock", {
+        int old = datetime_value.tm_hour;
+        datetime_value.tm_hour = 0;
+        expect_time("12 AM", "{I} {p}", datetime);
+        datetime_value.tm_hour = 1;
+        expect_time("01 am", "{I} {P}", datetime);
+        datetime_value.tm_hour = 11;
+        expect_time("11 AM", "{I} {p}", datetime);
+        datetime_value.tm_hour = 12;
+        expect_time("12 pm", "{I} {P}", datetime);
+        datetime_value.tm_hour = 13;
+        expect_time("01 PM", "{I} {p}", datetime);
+        datetime_value.tm_hour = 23;
+        expect_time("11 pm", "{I} {P}", datetime);
+        datetime_value.tm_hour = old;
     })
 
     su_test("embedded time strings", {
