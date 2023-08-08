@@ -1,5 +1,6 @@
 #include <smallunit.h>
 #include <icecream.h>
+
 #define FMT_IMPLEMENTATION
 //#define FMT_BIN_GROUP_NIBBLES
 #define FMT_DEFAULT_FLOAT_PRECISION -1
@@ -16,9 +17,12 @@ static bool expect_check(
     int source_line, const char *expected, const char *got, int written
 ) {
     if (strcmp(expected, got) != 0) {
+        size_t diff;
+        for (diff = 0; expected[diff] == got[diff] && got[diff]; ++diff) {}
+        const char *part2 = got + diff;
         fmt_eprintln(
-            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
-            source_line, expected, got
+            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{:.{}}\x1b[31m{}\x1b[0m\"",
+            source_line, expected, got, diff, part2
         );
         return false;
     }
@@ -549,7 +553,7 @@ su_module(datetime, {
 
     su_test("basic time printing", {
         expect_time("Sat Jun 4 03:02:01 2023", "{a} {b} {d:0} {H}:{M}:{S} {Y}", datetime);
-        expect_time("007", "{j}", datetime);
+        expect_time("008", "{j}", datetime);
         expect_time("23", "{y}", datetime);
         expect_time("7", "{u}", datetime);
         expect_time("6", "{w}", datetime);
@@ -586,6 +590,39 @@ su_module(datetime, {
     })
 
     su_test("embedded formatting", {
+    })
+
+    su_test("strftime compatibility", {
+        setlocale(LC_TIME, "POSIX");
+        // Omitted: DEGgklnOtUVW%
+        //
+        // The 'u' field is also omitted, the standard says: "Replaced by the
+        // weekday as a decimal number [1,7], with 1 representing Monday.", but
+        // strftime seems to use the range [0,6], like the 'w' field for some
+        // reason.
+        const char specifiers[] = "aAbBcCdeFHIjMpPrRsSwxXyYzZ";
+        char strftime_format[(sizeof(specifiers)-1)*3];
+        char fmt_format[(sizeof(specifiers)-1)*4];
+        char *s = strftime_format;
+        char *f = fmt_format;
+        for (const char *p = specifiers, *end = p + sizeof(specifiers) - 1; p != end; ++p) {
+            *s++ = '%';
+            *s++ = *p;
+            *s++ = '|';
+            *f++ = '{';
+            *f++ = *p;
+            *f++ = '}';
+            *f++ = '|';
+        }
+        s[-1] = '\0';
+        f[-1] = '\0';
+        enum { SIZE = 156 };
+        char *strftime_result = malloc(SIZE);
+        char *fmt_result = malloc(SIZE);
+        strftime(strftime_result, SIZE, strftime_format, datetime);
+        fmt_Writer *writer = FMT_NEW_STRING_WRITER(fmt_result, SIZE);
+        const int written = fmt_write_time(writer, fmt_format, datetime);
+        expect_check(__LINE__, strftime_result, fmt_result, written);
     })
 })
 

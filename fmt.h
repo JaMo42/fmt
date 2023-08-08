@@ -450,6 +450,13 @@ extern int fmt__fprint(FILE *stream, const char *format, int arg_count, ...);
 // TODO: documentation
 int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime);
 
+/// Translates a strftime format string into the fmt time format.
+///
+/// The format specifiers inroduced by glibc are not supported.
+///
+/// Moidifier ('E' and 'O') are not supported (fields can only be 1 character).
+void fmt_translate_strftime(const char *strftime, char *translated, int size);
+
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
 ////////////////////////////////////////////////////////////////////////////////
@@ -1215,7 +1222,7 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
 }
 
 static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char field) {
-    static const char ZERO_PADDED[] = "HMSIdyYjuwm";
+    static const char ZERO_PADDED[] = "HMSIdyYjuwmC";
     spec->fill = strchr(ZERO_PADDED, field) ? '0' : ' ';
     spec->align = fmt_ALIGN_RIGHT;
     spec->width = 0;
@@ -1229,6 +1236,7 @@ static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char 
         case 'e':
         case 'm':
         case 'd':
+        case 'C':
             spec->width = 2;
             break;
 
@@ -1467,7 +1475,7 @@ static const char * fmt__parse_time_specifier(
     fmt_Format_Specifier *out,
     int specifier_number
 ) {
-    static const char *const ALL_FIELDS = "HMSaAbBdyYIjpPrRTuwcexXm";
+    static const char *const ALL_FIELDS = "HMSaAbBdyYIjpPrRTuwcexXmCFszZ";
     int parsed;
     ++format_specifier;  // skip '{'
     if (strchr(ALL_FIELDS, *format_specifier)) {
@@ -2328,38 +2336,82 @@ static int fmt__print_time(
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifndef FMT_NO_LANGINFO
-static void fmt__translate_strftime(const char *strftime, char *translated) {
+void fmt_translate_strftime(const char *strftime, char *translated, int size) {
     for (; *strftime; ++strftime) {
         switch (*strftime) {
         case '%':
             if (*++strftime == '%') {
                 // TODO: format specifiers
+                // we probably don't need to care abouy format specifier as this
+                // is used for strings from the locale which shouldn't contain
+                // GNU extensions.
                 *translated++ = '%';
+                --size;
             } else {
                 *translated++ = '{';
                 *translated++ = *strftime;
                 *translated++ = '}';
+                size -= 3;
             }
             break;
 
         case '{':
             *translated++ = '{';
             *translated++ = '{';
+            size -= 2;
             break;
 
         case '}':
             *translated++ = '}';
             *translated++ = '}';
+            size -= 2;
             break;
 
         default:
             *translated++ = *strftime;
+            --size;
             break;
+        }
+        if (size == 0) {
+            fmt_panic("fmt__translate_strftime: overflow");
         }
     }
     *translated = '\0';
 }
 #endif
+
+
+static const char * fmt__timezone_name(const struct tm *datetime) {
+#ifdef _MSC_VER
+    fmt_panic("todo");
+#else
+    // is not declated if _POSIX_C_SOURCE is not set appropriately, we could set
+    // it but a different file may have already included it before us.
+    extern char *tzname[2];
+    return datetime->tm_isdst ? tzname[1] : tzname[0];
+#endif
+}
+
+static void fmt__get_timezone_offset(const struct tm *datetime, char buf[5]) {
+#ifdef _MSC_VER
+    fmt_panic("todo");
+#else
+    long offset = datetime->__tm_gmtoff;
+    if (offset < 0) {
+        offset = -offset;
+        *buf++ = '-';
+    } else {
+        *buf++ = '+';
+    }
+    const unsigned full_minutes = offset / 60;
+    const unsigned hours = full_minutes / 60;
+    const unsigned minutes = full_minutes % 60;
+    memcpy(buf, fmt__DECIMAL_DIGIT_PAIRS + hours * 2, 2);
+    buf += 2;
+    memcpy(buf, fmt__DECIMAL_DIGIT_PAIRS + minutes * 2, 2);
+    buf[2] = '\0';
+#endif
+}
 
 static int fmt__print_time_specifier(
     fmt_Writer *writer,
@@ -2370,12 +2422,14 @@ static int fmt__print_time_specifier(
 #ifdef FMT_NO_LANGINFO
     static const char *LONG_DAYS[]
         = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-    static const char *SHORT_DAYS[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static const char *SHORT_DAYS[]
+        = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
     static const char *LONG_MONTHS[]
         = {"January", "February", "March", "April", "May", "June",
            "July", "August", "September", "October", "November", "December"};
-    static const char *SHORT_MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    static const char *SHORT_MONTHS[]
+        = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 #endif
 
     fmt_Format_Specifier spec;
@@ -2424,16 +2478,26 @@ static int fmt__print_time_specifier(
 
     case 'y': value.v_unsigned = (1900 + datetime->tm_year) % 100; goto t_unsigned;
     case 'Y': value.v_unsigned = 1900 + datetime->tm_year; goto t_unsigned;
-    case 'j': value.v_unsigned = datetime->tm_yday; goto t_unsigned;
+    case 'C': value.v_unsigned = (1900 + datetime->tm_year) / 100; goto t_unsigned;
+    case 'j': value.v_unsigned = datetime->tm_yday + 1; goto t_unsigned;
+
+    case 's':
+        // mktime normalizes the structure so we need a copy
+        struct tm my_datetime = *datetime;
+        value.v_unsigned = mktime(&my_datetime);
+        goto t_unsigned;
+
+    case 'Z': value.v_string = fmt__timezone_name(datetime); goto t_string;
+    case 'z': goto t_timezone;
 
     case 'R': value.v_string = "{H}:{M}"; goto t_group;
     case 'T': value.v_string = "{H}:{M}:{S}"; goto t_group;
+    case 'F': value.v_string = "{Y}-{m}-{d}"; goto t_group;
 
 #ifdef FMT_NO_LANGINFO
     case 'c': value.v_string = "{a} {b} {e} {H}:{M}:{S} {Y}"; goto t_group;
     case 'r': value.v_string = "{I}:{M}:{S} {p}"; goto t_group;
-    // Note: the POSIX locale would be '{m}/{d}/{y}' because formats that make
-    // sense are illegal in America
+    // Note: the POSIX locale would be '{m}/{d}/{y}'
     case 'x': value.v_string = "{d}/{m}/{y}"; goto t_group;
     case 'X': value.v_string = "{H}:{M}:{S}"; goto t_group;
 #else
@@ -2450,18 +2514,22 @@ t_unsigned:
     spec.type = 'd';
     return fmt__print_int(writer, &spec, value.v_unsigned, 0);
 
+t_timezone:
+    char tzbuf[6];
+    fmt__get_timezone_offset(datetime, tzbuf);
+    value.v_string = tzbuf;
+    goto t_string;
+
 #ifndef FMT_NO_LANGINFO
 t_locale_group:
-    // TODO: fit size
     char translated[32];
     value.v_string = nl_langinfo(value.v_locale_item);
-    fmt__translate_strftime(value.v_string, translated);
+    fmt_translate_strftime(value.v_string, translated, sizeof(translated));
     value.v_string = translated;
     /* fallthrough */
 #endif
 
 t_group:
-    // TODO: fit size
     char buf[32];
     fmt_String_Writer group_writer = {
         .base = fmt_STRING_WRITER_FUNCTIONS,
