@@ -5,7 +5,38 @@
 #define FMT_DEFAULT_FLOAT_PRECISION -1
 #include "fmt.h"
 
-static bool expect_impl(int source_line, const char *expected, const char *fmt, int arg_count, ...) {
+#define STRINGIFY_2(x) #x
+#define STRINGIFY(x) STRINGIFY_2(x)
+
+////////////////////////////////////////////////////////////////////////////////
+// Expect formatted string
+////////////////////////////////////////////////////////////////////////////////
+
+static bool expect_check(
+    int source_line, const char *expected, const char *got, int written
+) {
+    if (strcmp(expected, got) != 0) {
+        fmt_eprintln(
+            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
+            source_line, expected, got
+        );
+        return false;
+    }
+    const int expect_written = strlen(expected);
+    if (written != expect_written) {
+        fmt_eprintln(
+            "  Line {}:\n    wrong number of bytes written reported:\n"
+            "      expected: {}\n      got: {}\n      string: \"{}\"",
+            source_line, expect_written, written, got
+        );
+        return false;
+    }
+    return true;
+}
+
+static bool expect_impl(
+    int source_line, const char *expected, const char *fmt, int arg_count, ...
+) {
     static char buf[256];
     memset(buf, 0, sizeof(buf));
     va_list ap;
@@ -24,23 +55,7 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
     );
 #endif
     va_end(ap);
-    if (strcmp(expected, buf) != 0) {
-        fmt_eprintln(
-            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
-            source_line, expected, buf
-        );
-        return false;
-    }
-    const int expect_written = strlen(expected);
-    if (written != expect_written) {
-        fmt_eprintln(
-            "  Line {}:\n    wrong number of bytes written reported:\n"
-            "      expected: {}\n      got: {}\n      string: \"{}\"",
-            source_line, expect_written, written, buf
-        );
-        return false;
-    }
-    return true;
+    return expect_check(source_line, expected, buf, written);
 }
 
 #define expect(_expected, _fmt, ...)             \
@@ -49,12 +64,158 @@ static bool expect_impl(int source_line, const char *expected, const char *fmt, 
             __LINE__,                            \
             _expected,                           \
             _fmt,                                \
-            FMT_VA_ARG_COUNT(__VA_ARGS__)       \
+            FMT_VA_ARG_COUNT(__VA_ARGS__)        \
             __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
         )) {                                     \
             su_fail();                           \
         }                                        \
     } while(0)
+
+static bool expect_time_impl(
+    int source_line, const char *expected, const char *fmt, const struct tm *datetime
+) {
+    static char buf[256];
+    memset(buf, 0, sizeof(buf));
+#ifdef __cplusplus
+    fmt_String_Writer writer = (fmt_String_Writer) {
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = buf,
+        .at = buf,
+        .end = buf + sizeof(buf),
+    };
+    const int written = fmt_write_time((fmt_Writer *)&writer, fmt, datetime);
+#else
+    const int written = fmt_write_time(
+        FMT_NEW_STRING_WRITER(buf, sizeof(buf)), fmt, datetime
+    );
+#endif
+    return expect_check(source_line, expected, buf, written);
+}
+
+#define expect_time(_expected, _fmt, _tm)                        \
+    do {                                                         \
+        if (!expect_time_impl(__LINE__, _expected, _fmt, _tm)) { \
+            su_fail();                                           \
+        }                                                        \
+    } while (0)
+
+////////////////////////////////////////////////////////////////////////////////
+// Expect format specifier
+////////////////////////////////////////////////////////////////////////////////
+
+static fmt_String expect_spec_get_check_impl(int number, const char *checks) {
+    const char *before, *after;
+    if (number) {
+        int i;
+        // note: postfix incement, will point after the comma
+        for (before = checks, i = 0; i < number; i += *before++ == ',') {}
+    } else {
+        // points after the opening parenthesis
+        before = checks + 1;
+    }
+    after = strchr(before, ',');
+    if (!after) {
+        after = before + strlen(before) - 1;
+    }
+    // comma_after either points at the comma after or the closing parenthesis now
+    while (*before == ' ') {
+        ++before;
+    }
+    while (*after == ' ') {
+        --after;
+    }
+    return (fmt_String) {
+        .data = (char *)before,
+        .capacity = 0,
+        .size = (size_t)(after - before),
+    };
+}
+
+/// Get the text for the `number`th check from the varidadic arguments
+#define expect_spec_get_check(number, ...) \
+    expect_spec_get_check_impl((number), STRINGIFY((__VA_ARGS__)))
+
+static const char * my_parse_specifier(
+    fmt_Format_Specifier *out,
+    fmt_Type_Id type,
+    const char *format_specifier,
+    int *arg_count,
+    ...
+) {
+    va_list ap;
+    va_start(ap, arg_count);
+    const char *const end = fmt__parse_specifier(
+        format_specifier, out, type, 1, arg_count, ap
+    );
+    va_end(ap);
+    return end;
+}
+
+#define expect_spec(_type, _format, ...)               \
+    do {                                               \
+        fmt_Format_Specifier spec;                     \
+        fmt__format_specifier_default(&spec);          \
+        int arg_count = FMT_VA_ARG_COUNT(__VA_ARGS__); \
+        const char *end = my_parse_specifier(          \
+            &spec,                                     \
+            _type,                                     \
+            _format,                                   \
+            &arg_count                                 \
+            __VA_OPT__(, FMT__ARGS(__VA_ARGS__))       \
+        );                                             \
+        su_assert_eq(*end, '\0');                      \
+        su_assert_eq(arg_count, 0);                    \
+        expect_spec_2
+
+#define expect_spec_2(...)                                            \
+        bool checks[] = { __VA_ARGS__ };                              \
+        const int count = sizeof(checks) / sizeof(*checks);           \
+        for (int i = 0; i < count; ++i) {                             \
+            if (!checks[i]) {                                         \
+                fmt_eprintln(                                         \
+                    "format specifier check failed near line {}: {}", \
+                    __LINE__,                                         \
+                    expect_spec_get_check(i, __VA_ARGS__)             \
+                );                                                    \
+                su_fail();                                            \
+            }                                                         \
+        }                                                             \
+    } while (0)
+
+////////////////////////////////////////////////////////////////////////////////
+// Expect time format specifier
+////////////////////////////////////////////////////////////////////////////////
+
+#define expect_time_spec(_format)                     \
+    do {                                              \
+        fmt_Format_Specifier spec;                    \
+        fmt__time_format_specifier_default(&spec, 0); \
+        const char *end = fmt__parse_time_specifier(  \
+            _format,                                  \
+            &spec,                                    \
+            1                                         \
+        );                                            \
+        su_assert_eq(*end, '\0');                     \
+        expect_time_spec_2
+
+#define expect_time_spec_2(...)                                            \
+        bool checks[] = { __VA_ARGS__ };                                   \
+        const int count = sizeof(checks) / sizeof(*checks);                \
+        for (int i = 0; i < count; ++i) {                                  \
+            if (!checks[i]) {                                              \
+                fmt_eprintln(                                              \
+                    "time format specifier check failed near line {}: {}", \
+                    __LINE__,                                              \
+                    expect_spec_get_check(i, __VA_ARGS__)                  \
+                );                                                         \
+                su_fail();                                                 \
+            }                                                              \
+        }                                                                  \
+    } while (0)
+
+////////////////////////////////////////////////////////////////////////////////
+// Unicode test cases
+////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
     const fmt_char8_t *data;
@@ -69,6 +230,49 @@ const Unicode_Test_Case unicode_test_cases[] = {
     {(const fmt_char8_t *)"💚", U'💚', 4},
 };
 const int unicode_test_case_count = sizeof(unicode_test_cases) / sizeof(Unicode_Test_Case);
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+static int format_specifier_parsing_tests() {
+    void *su__skip = &&skip;
+    int su__status = SU_PASS;
+    expect_spec(fmt__TYPE_INT, "{x}")(
+        spec.type == 'x'
+    );
+    expect_spec(fmt__TYPE_INT, "{:{}^+#{}..{}}", 'a', 123, 456)(
+        spec.fill == 'a',
+        spec.align == fmt_ALIGN_CENTER,
+        spec.sign == fmt_SIGN_ALWAYS,
+        spec.alternate_form == true,
+        spec.group == '.',
+        spec.precision == 456
+    );
+    expect_spec(fmt__TYPE_INT, "{:{}<0}", 'a')(
+        spec.fill == 'a', // zero padding only affects the fill character in the
+        // printing functions, not at parsing
+        spec.align == fmt_ALIGN_RIGHT, // but it does change the alignment
+    );
+skip:
+    return su__status;
+}
+
+static int time_format_specifier_parsing_tests() {
+    void *su__skip = &&skip;
+    int su__status = SU_PASS;
+    expect_time_spec("{H}")(
+        spec.type == 'H'
+    );
+    expect_time_spec("{M: <.2}")(
+        spec.type == 'M',
+        spec.fill == ' ',
+        spec.align == fmt_ALIGN_LEFT,
+        spec.precision == 2,
+    );
+skip:
+    return su__status;
+}
 
 su_module_d(internal_functions, "internal functions", {
     su_test("integer width", {
@@ -156,6 +360,20 @@ su_module_d(internal_functions, "internal functions", {
             ++expected;
         }
     })
+
+    su_test("format specifier parsing", {
+        // Something about the 2-part macro with the variadic arguments
+        // irritates the smallunit macros so this needs to be in a separate
+        // function.
+        su__status = format_specifier_parsing_tests();
+    })
+
+    su_test("time format specifier parsing", {
+        // Something about the 2-part macro with the variadic arguments
+        // irritates the smallunit macros so this needs to be in a separate
+        // function.
+        su__status = time_format_specifier_parsing_tests();
+    })
 })
 
 su_module_d(basic_printing, "basic printing", {
@@ -239,10 +457,11 @@ su_module_d(basic_printing, "basic printing", {
     })
 
     su_test("fmt_String", {
+        char data[] = "Hello World";
         fmt_String string = ((fmt_String) {
-            .data = "Hello World",
+            .data = data,
             .capacity = 0,
-            .size = 11
+            .size = sizeof(data) - 1,
         });
         expect("Hello World", "{}", string);
         string.size = 5;
@@ -314,8 +533,28 @@ su_module(formatting, {
     })
 })
 
+su_module(datetime, {
+    const struct tm datetime_value = ((struct tm) {
+        .tm_sec = 1,
+        .tm_min = 2,
+        .tm_hour = 3,
+        .tm_mday = 4,
+        .tm_mon = 5,
+        .tm_year = 123,
+        .tm_wday = 6,
+        .tm_yday = 7,
+        .tm_isdst = true,
+    });
+    const struct tm *datetime = &datetime_value;
+
+    su_test("basic time printing", {
+        expect_time("Sun Jun 4 03:02:01 2023", "{a} {b} {d} {H}:{M}:{S} {Y}", datetime);
+    })
+})
+
 int main() {
     su_run_module(internal_functions);
     su_run_module(basic_printing);
     su_run_module(formatting);
+    su_run_module(datetime);
 }

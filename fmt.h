@@ -30,7 +30,7 @@ typedef uint_least8_t fmt_char8_t;
 #endif
 
 #ifndef FMT_DEFAULT_TIME_FORMAT
-#  define FMT_DEFAULT_TIME_FORMAT "%a %b %d %H:%M:%S %Y"
+#  define FMT_DEFAULT_TIME_FORMAT "{a} {b} {d} {H}:{M}:{S} {Y}"
 #endif
 
 #ifndef FMT_LOWER_INF
@@ -176,6 +176,7 @@ typedef enum {
     fmt__TYPE_STRING_16,
     fmt__TYPE_STRING_32,
     fmt__TYPE_POINTER,
+    fmt__TYPE_TIME,
     fmt__TYPE_FMT_STRING,
 } fmt_Type_Id;
 
@@ -188,6 +189,14 @@ typedef enum {
 #endif
 
 #ifdef __cplusplus
+
+// Need to define fmt_String here so we can use it to overload the type id function.
+
+struct fmt_String {
+    char *data;
+    size_t capacity;
+    size_t size;
+};
 
 #define FMT_TYPE_ID(_T, _id) \
     static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] _T _) { return _id; }
@@ -218,6 +227,9 @@ FMT_TYPE_ID(wchar_t *, fmt__TYPE_WSTRING);
 FMT_TYPE_ID(const wchar_t *, fmt__TYPE_WSTRING);
 FMT_TYPE_ID(void *, fmt__TYPE_POINTER);
 FMT_TYPE_ID(const void *, fmt__TYPE_POINTER);
+FMT_TYPE_ID(tm *, fmt__TYPE_TIME);
+FMT_TYPE_ID(const tm *, fmt__TYPE_TIME);
+FMT_TYPE_ID(fmt_String, fmt__TYPE_FMT_STRING);
 template<class Else>
 FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
 #undef FMT_TYPE_ID
@@ -250,6 +262,8 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         const wchar_t *: fmt__TYPE_WSTRING, \
         void *: fmt__TYPE_POINTER, \
         const void *: fmt__TYPE_POINTER, \
+        struct tm *: fmt__TYPE_TIME, \
+        const struct tm *: fmt__TYPE_TIME, \
         fmt_String: fmt__TYPE_FMT_STRING, \
         default: fmt__TYPE_UNKNOWN \
     )
@@ -290,11 +304,13 @@ typedef struct {
     const char *const end;
 } fmt_String_Writer;
 
+#ifndef __cplusplus
 typedef struct {
     char *data;
     size_t capacity;
     size_t size;
 } fmt_String;
+#endif
 
 typedef struct {
     const fmt_Writer base;
@@ -402,6 +418,9 @@ extern int fmt__sprint(char *string, size_t size, const char *format, int arg_co
 
 /// Implementation for the `fmt_fprint` macro.
 extern int fmt__fprint(FILE *stream, const char *format, int arg_count, ...);
+
+// TODO: documentation
+int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -1101,17 +1120,16 @@ typedef enum {
     fmt_SIGN_ALWAYS,
 } fmt_Sign;
 
-// TODO: reorder to minimize padding.
 typedef struct {
-    char type;
     char32_t fill;
     fmt_Alignment align;
     fmt_Sign sign;
-    bool alternate_form;
-    bool zero_pad;
-    int width;
     char32_t group;
     int precision;
+    int width;
+    char type;
+    bool alternate_form;
+    bool zero_pad;
 } fmt_Format_Specifier;
 
 static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
@@ -1124,6 +1142,21 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
     spec->width = 0;
     spec->group = 0;
     spec->precision = -1;
+}
+
+static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char field) {
+    static const char INTEGER_FIELDS[] = "HMSdY";
+    spec->fill = strchr(INTEGER_FIELDS, field) ? '0' : ' ';
+    spec->align = fmt_ALIGN_RIGHT;
+    spec->width = 0;
+    spec->precision = -1;
+    switch (field) {
+        case 'H':
+        case 'M':
+        case 'S':
+            spec->width = 2;
+            break;
+    }
 }
 
 static int fmt__parse_alignment(char ch) {
@@ -1220,6 +1253,7 @@ static const char * fmt__parse_specifier(
         return ++format_specifier;
     }
     if (*format_specifier != ':') {
+        // Display type
         parsed = *format_specifier++;
         const char *valid = fmt__valid_display_types(type);
         if (strchr(valid, parsed) != NULL) {
@@ -1243,13 +1277,17 @@ static const char * fmt__parse_specifier(
             specifier_number
         );
     }
+    // Alignment
     if ((parsed = fmt__parse_alignment(*format_specifier))) {
+        // Only alignemnt
         out->align = (fmt_Alignment)parsed;
         ++format_specifier;
     } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 1)))) {
+        // Alignment and codepoint in the string
         out->align = (fmt_Alignment)parsed;
         format_specifier += fmt__utf8_decode((const fmt_char8_t *)format_specifier, &out->fill) + 1;
     } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 2)))) {
+        // Alignment and parameterized fill character, or opening or closing curly brace
         if (format_specifier[0] == '{' && format_specifier[1] == '}') {
             out->align = (fmt_Alignment)parsed;
             if (*arg_count == 0) {
@@ -1261,7 +1299,8 @@ static const char * fmt__parse_specifier(
             out->fill = fmt__va_get_character(ap);
             if (!fmt__is_valid_codepoint(out->fill)) {
                 fmt_panic(
-                    "parameterized fill character in format specifier {} is not a valid unicode character: {x:#}",
+                    "parameterized fill character in format specifier {} is "
+                    "not a valid unicode character: {x:#}",
                     specifier_number,
                     (unsigned)out->fill
                 );
@@ -1278,36 +1317,115 @@ static const char * fmt__parse_specifier(
             format_specifier += 3;
         }
     }
+    // Sign
     if ((parsed = fmt__parse_sign(*format_specifier))) {
         out->sign = (fmt_Sign)parsed;
         ++format_specifier;
     }
+    // Alternate form
     if (*format_specifier == '#') {
         out->alternate_form = true;
         ++format_specifier;
     }
+    // Zero-padding
     if (*format_specifier == '0') {
         out->align = fmt_ALIGN_RIGHT;
         out->zero_pad = true;
         ++format_specifier;
     }
+    // Width
     if (*format_specifier == '{' || isdigit(*format_specifier)) {
-        format_specifier = fmt__parse_int(format_specifier, "width", &out->width, specifier_number, arg_count, ap);
+        format_specifier = fmt__parse_int(
+            format_specifier, "width", &out->width, specifier_number, arg_count, ap
+        );
     }
+    // Grouping
     // If we have a . the next charater must also be a . or the end of the
     // specifier for it to be the grouping character.  Anything else in this
     // position must be the grouping character.
     char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
     if ((*format_specifier != '.' && *format_specifier != '}')
         || next == '.' || next == '}') {
-        format_specifier += fmt__utf8_decode((const fmt_char8_t *)format_specifier, &out->group);
+        format_specifier += fmt__utf8_decode(
+            (const fmt_char8_t *)format_specifier, &out->group
+        );
     }
+    // Precision
     if (*format_specifier == '.') {
         ++format_specifier;
-        format_specifier = fmt__parse_int(format_specifier, "precision", &out->precision, specifier_number, arg_count, ap);
+        format_specifier = fmt__parse_int(
+            format_specifier, "precision", &out->precision, specifier_number, arg_count, ap
+        );
     }
     if (*format_specifier++ != '}') {
         fmt_panic("format specifier {} is invalid", specifier_number);
+    }
+    return format_specifier;
+}
+
+static const char * fmt__parse_time_specifier(
+    const char *format_specifier,
+    fmt_Format_Specifier *out,
+    int specifier_number
+) {
+    static const char *const ALL_FIELDS = "HMSaAbBdY";
+    int parsed;
+    ++format_specifier;  // skip '{'
+    if (strchr(ALL_FIELDS, *format_specifier)) {
+        out->type = *format_specifier++;
+    } else {
+        fmt_panic(
+            "invalid field '{}' in time format specifier {}",
+            *format_specifier, specifier_number
+        );
+    }
+    fmt__time_format_specifier_default(out, out->type);
+    if (*format_specifier == '}') {
+        return ++format_specifier;
+    } else if (*format_specifier == ':') {
+        ++format_specifier;
+    } else {
+        fmt_panic(
+            "expected : or } after field in time format specifier {}",
+            specifier_number
+        );
+    }
+    // Alignment
+    if ((parsed = fmt__parse_alignment(*format_specifier))) {
+        // Only alignemnt
+        out->align = (fmt_Alignment)parsed;
+        ++format_specifier;
+    } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 1)))) {
+        // Alignment and codepoint in the string
+        out->align = (fmt_Alignment)parsed;
+        format_specifier += fmt__utf8_decode((const fmt_char8_t *)format_specifier, &out->fill) + 1;
+    } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 2)))) {
+        // Alignment and opening or closing curly brace
+        if (format_specifier[0] == '{' && format_specifier[1] == '{') {
+            out->align = (fmt_Alignment)parsed;
+            out->fill = '{';
+            format_specifier += 3;
+        } else if (format_specifier[0] == '{' && format_specifier[1] == '{') {
+            out->align = (fmt_Alignment)parsed;
+            out->fill = '}';
+            format_specifier += 3;
+        }
+    }
+    // Width
+    if (isdigit(*format_specifier)) {
+        format_specifier = fmt__parse_int(
+            format_specifier, "width", &out->width, specifier_number, NULL, NULL
+        );
+    }
+    // Precision
+    if (*format_specifier == '.') {
+        ++format_specifier;
+        format_specifier = fmt__parse_int(
+            format_specifier, "precision", &out->precision, specifier_number, NULL, NULL
+        );
+    }
+    if (*format_specifier++ != '}') {
+        fmt_panic("time format specifier {} is invalid", specifier_number);
     }
     return format_specifier;
 }
@@ -1853,6 +1971,8 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
 
     fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width, fs->align);
 
+    // TODO: but zero-padding sets the alignment to the right and overwrites
+    // the other alignment so this is always true?
     // Only do zero-padding when aligning to the right, this follows the
     // behaviour of printf.
     fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
@@ -2014,6 +2134,67 @@ static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, cons
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Time
+////////////////////////////////////////////////////////////////////////////////
+
+static int fmt__print_time_specifier(
+    fmt_Writer *writer,
+    const char **format_specifier,
+    int specifier_number,
+    const struct tm *datetime
+) {
+    static const char *LONG_DAYS[]
+        = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    static const char *SHORT_DAYS[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    static const char *LONG_MONTHS[]
+        = {"January", "February", "March", "April", "May", "June",
+           "July", "August", "September", "October", "November", "December"};
+    static const char *SHORT_MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+    fmt_Format_Specifier spec;
+    *format_specifier = fmt__parse_time_specifier(
+        *format_specifier, &spec, specifier_number
+    );
+    union {
+        unsigned long long v_unsigned;
+        const char *v_string;
+    } value;
+
+    switch (spec.type) {
+    case 'H': value.v_unsigned = datetime->tm_hour; goto t_unsigned;
+    case 'M': value.v_unsigned = datetime->tm_min; goto t_unsigned;
+    case 'S': value.v_unsigned = datetime->tm_sec; goto t_unsigned;
+
+    case 'a': value.v_string = SHORT_DAYS[datetime->tm_wday]; goto t_string;
+    case 'A': value.v_string = LONG_DAYS[datetime->tm_wday]; goto t_string;
+
+    case 'b': value.v_string = SHORT_MONTHS[datetime->tm_mon]; goto t_string;
+    case 'B': value.v_string = LONG_MONTHS[datetime->tm_mon]; goto t_string;
+
+    case 'd': value.v_unsigned = datetime->tm_mday; goto t_unsigned;
+
+    case 'Y': value.v_unsigned = 1900 + datetime->tm_year; goto t_unsigned;
+    }
+
+    fmt_panic("unreachable");
+
+t_unsigned:
+    spec.type = 'd';
+    return fmt__print_int(writer, &spec, value.v_unsigned, 0);
+
+t_string:
+    spec.type = 's';
+    int length;
+    if (spec.precision < 0) {
+        length = strlen(value.v_string);
+    } else {
+        length = fmt__utf8_chars_len(value.v_string, spec.precision);
+    }
+    return fmt__print_utf8(writer, &spec, value.v_string, length);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Core functions
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -2035,7 +2216,13 @@ void fmt_init_threading() {
 void fmt_init_threading() {}
 #endif
 
-static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifier, int *arg_count, int specifier_number, va_list ap) {
+static int fmt__print_specifier(
+    fmt_Writer *writer,
+    const char **format_specifier,
+    int *arg_count,
+    int specifier_number,
+    va_list ap
+) {
     if (*arg_count == 0) {
         fmt_panic("\nArguments exhausted at specifier {}", specifier_number);
     }
@@ -2051,7 +2238,7 @@ static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifie
         bool v_bool;
         double v_float;
         const void *v_pointer;
-        struct tm v_time;
+        const struct tm *v_time;
         fmt_String v_fmt_string;
     } value;
     int length = 0;
@@ -2124,6 +2311,13 @@ static int fmt__print_specifier(fmt_Writer *writer, const char **format_specifie
 
         FMT_TID_CASE(fmt__TYPE_FLOAT, v_float, double, t_float)
         FMT_TID_CASE(fmt__TYPE_DOUBLE, v_float, double, t_float)
+
+        case fmt__TYPE_TIME:
+            value.v_time = va_arg(ap, struct tm *);
+            //*format_specifier = fmt__parse_time_specifier(
+            //    *format_specifier, &fs, specifier_number, arg_count, ap
+            //);
+            goto t_time;
 
         FMT_TID_CASE(fmt__TYPE_FMT_STRING, v_fmt_string, fmt_String, t_fmt_string)
 
@@ -2205,6 +2399,9 @@ t_float:
 t_bool:
     return fmt__print_bool(writer, &fs, value.v_bool);
 
+t_time:
+    fmt_panic("unimplemented");
+
 t_fmt_string:
     return fmt__print_utf8(
         writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
@@ -2221,7 +2418,9 @@ int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va
             if (open_bracket[1] == '{') {
                 format = open_bracket;
             } else {
-                written += fmt__print_specifier(writer, &open_bracket, &arg_count, specifier_number++, ap);
+                written += fmt__print_specifier(
+                    writer, &open_bracket, &arg_count, specifier_number++, ap
+                );
                 format = open_bracket;
             }
         } else if (*format) {
@@ -2337,6 +2536,28 @@ int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ..
     const int written = fmt_implementation((fmt_Writer *)&writer, format, arg_count, ap);
     va_end(ap);
     string[written] = '\0';
+    return written;
+}
+
+int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime) {
+    int written = 0;
+    const char *open_bracket = format;
+    int specifier_number = 1;
+    while (open_bracket) {
+        if ((open_bracket = strchr(format, '{')) != NULL) {
+            written += writer->write_data(writer, format, open_bracket - format);
+            if (open_bracket[1] == '{') {
+                format = open_bracket;
+            } else {
+                written += fmt__print_time_specifier(
+                    writer, &open_bracket, specifier_number++, datetime
+                );
+                format = open_bracket;
+            }
+        } else if (*format) {
+            written += writer->write_str(writer, format);
+        }
+    }
     return written;
 }
 
