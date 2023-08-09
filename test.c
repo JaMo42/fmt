@@ -17,12 +17,16 @@ static bool expect_check(
     int source_line, const char *expected, const char *got, int written
 ) {
     if (strcmp(expected, got) != 0) {
-        size_t diff;
-        for (diff = 0; expected[diff] == got[diff] && got[diff]; ++diff) {}
-        const char *part2 = got + diff;
+        //size_t diff;
+        //for (diff = 0; expected[diff] == got[diff] && got[diff]; ++diff) {}
+        //const char *part2 = got + diff;
+        //fmt_eprintln(
+        //    "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{:.{}}\x1b[31m{}\x1b[0m\"",
+        //    source_line, expected, got, diff, part2
+        //);
         fmt_eprintln(
-            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{:.{}}\x1b[31m{}\x1b[0m\"",
-            source_line, expected, got, diff, part2
+            "  Line {}:\n    mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
+            source_line, expected, got
         );
         return false;
     }
@@ -587,9 +591,16 @@ su_module(datetime, {
     })
 
     su_test("formatting", {
+        expect_time("    Sat", "{a:>7}", datetime);
+        expect_time("....Sat", "{a:.>7}", datetime);
+        expect_time("Satu", "{A:.4}", datetime);
     })
 
     su_test("embedded formatting", {
+        expect("  03:02  ", "{%{H}:{M}%:^9}", datetime);
+        expect("  Satu  ", "{%{A:.4}%:^8}", datetime);
+        expect("::Sat::", "{%{a}%::^7}", datetime);
+        expect("::Sat Jun 4 03:02:01 2023::", "{::^27}", datetime);
     })
 
     su_test("strftime compatibility", {
@@ -598,31 +609,25 @@ su_module(datetime, {
         //
         // The 'u' field is also omitted, the standard says: "Replaced by the
         // weekday as a decimal number [1,7], with 1 representing Monday.", but
-        // strftime seems to use the range [0,6], like the 'w' field for some
+        // strftime seems to use the range [0,6] like the 'w' field for some
         // reason.
         const char specifiers[] = "aAbBcCdeFHIjMpPrRsSwxXyYzZ";
-        char strftime_format[(sizeof(specifiers)-1)*3];
-        char fmt_format[(sizeof(specifiers)-1)*4];
-        char *s = strftime_format;
-        char *f = fmt_format;
-        for (const char *p = specifiers, *end = p + sizeof(specifiers) - 1; p != end; ++p) {
-            *s++ = '%';
-            *s++ = *p;
-            *s++ = '|';
-            *f++ = '{';
-            *f++ = *p;
-            *f++ = '}';
-            *f++ = '|';
+        char strftime_format[] = "%_";
+        char fmt_format[] = "{_}";
+        enum { SIZE = 64};
+        char strftime_result[SIZE];
+        char fmt_result[SIZE];
+        int written;
+        for (const char *s = specifiers; *s; ++s) {
+            strftime_format[1] = *s;
+            fmt_format[1] = *s;
+            strftime(strftime_result, SIZE, strftime_format, datetime);
+            written = fmt_format_time_to(fmt_result, SIZE, fmt_format, datetime);
+            if (!expect_check(__LINE__, strftime_result, fmt_result, written)) {
+                fmt_eprintln("      field:    {}", fmt_format);
+                su_fail();
+            }
         }
-        s[-1] = '\0';
-        f[-1] = '\0';
-        enum { SIZE = 156 };
-        char *strftime_result = malloc(SIZE);
-        char *fmt_result = malloc(SIZE);
-        strftime(strftime_result, SIZE, strftime_format, datetime);
-        fmt_Writer *writer = FMT_NEW_STRING_WRITER(fmt_result, SIZE);
-        const int written = fmt_write_time(writer, fmt_format, datetime);
-        expect_check(__LINE__, strftime_result, fmt_result, written);
     })
 })
 

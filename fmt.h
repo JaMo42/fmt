@@ -447,8 +447,17 @@ extern int fmt__sprint(char *string, size_t size, const char *format, int arg_co
 /// Implementation for the `fmt_fprint` macro.
 extern int fmt__fprint(FILE *stream, const char *format, int arg_count, ...);
 
-// TODO: documentation
+/// Formats the broken-down time `datetime` per the specified format string.
 int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime);
+
+/// Like `fmt_write_time` with a string writer, but unlike `fmt_write_time` this will
+/// also add null terminator.
+int fmt_format_time_to(char *buf, size_t size, const char *format, const struct tm *datetime);
+
+/// Like `fmt_write_time` but writes to an allocated string.
+///
+/// See the `README.md` of this library for available specifiers.
+fmt_String fmt_format_time(const char *format, const struct tm *datetime);
 
 /// Translates a strftime format string into the fmt time format.
 ///
@@ -807,7 +816,12 @@ int fmt__write_stream_str(fmt_Writer *p_self, const char *str) {
 
 static void fmt__string_writer_check(fmt_String_Writer *self, int space) {
     if (self->at + space > self->end) {
-        fmt_panic("string writer overflow\n  current content: \"{:.{}}\"", self->string, self->at - self->string);
+        const size_t capacity = self->end - self->string;
+        const size_t size = self->at - self->string;
+        fmt_panic(
+            "string writer overflow\n   content: \"{:.{}}\"\n  capacity: {}\n      size: {}",
+            self->string, size, capacity, size
+        );
     }
 }
 
@@ -1575,6 +1589,9 @@ static const char * fmt__parse_embedded_time_specifier(
             *time_string_out = time_string;
             *time_string_length_out = format_specifier - time_string;
             ++format_specifier; // skip closing delimiter
+        }
+        if (*format_specifier == ':') {
+            ++format_specifier;
         }
     } else if (*format_specifier == ':') {
         *time_string_out = FMT_DEFAULT_TIME_FORMAT;
@@ -2451,9 +2468,14 @@ static int fmt__print_time_specifier(
     case 'S': value.v_unsigned = datetime->tm_sec; goto t_unsigned;
 
     case 'I': value.v_unsigned = datetime->tm_hour % 12 ?: 12; goto t_unsigned;
+#ifdef FMT_NO_LANGINFO
     // strftime uses lowercase p for upper case strings and vice versa...
     case 'p': value.v_string = datetime->tm_hour < 12 ? "AM" : "PM"; goto t_string;
     case 'P': value.v_string = datetime->tm_hour < 12 ? "am" : "pm"; goto t_string;
+#else
+    case 'p': value.v_string = nl_langinfo(datetime->tm_hour < 12 ? AM_STR : PM_STR); goto t_string;
+    case 'P': value.v_string = nl_langinfo(datetime->tm_hour < 12 ? AM_STR : PM_STR); goto t_ampm_lower;
+#endif
 
     case 'u': value.v_unsigned = datetime->tm_wday + 1; goto t_unsigned;
     case 'w': value.v_unsigned = datetime->tm_wday; goto t_unsigned;
@@ -2514,6 +2536,16 @@ t_unsigned:
     spec.type = 'd';
     return fmt__print_int(writer, &spec, value.v_unsigned, 0);
 
+t_ampm_lower:
+    char lower[16];
+    char *w = lower;
+    for (const char *p = value.v_string; *p; ++p) {
+        *w++ = tolower(*p);
+    }
+    *w = '\0';
+    value.v_string = lower;
+    goto t_string;
+
 t_timezone:
     char tzbuf[6];
     fmt__get_timezone_offset(datetime, tzbuf);
@@ -2530,7 +2562,8 @@ t_locale_group:
 #endif
 
 t_group:
-    char buf[32];
+    // note: needs to be quite large for UTF-8.
+    char buf[64];
     fmt_String_Writer group_writer = {
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = buf,
@@ -2954,6 +2987,33 @@ int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *date
         }
     }
     return written;
+}
+
+int fmt_format_time_to(char *buf, size_t size, const char *format, const struct tm *datetime) {
+    fmt_String_Writer writer = {
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = buf,
+        .at = buf,
+        .end = buf + size - 1
+    };
+    const int written = fmt_write_time((fmt_Writer*)&writer, format, datetime);
+    *writer.at = '\0';
+    return written;
+}
+
+fmt_String fmt_format_time(const char *format, const struct tm *datetime) {
+    enum { INIT_CAP = 16 };
+    fmt_Allocating_String_Writer writer = (fmt_Allocating_String_Writer) {
+        .base = fmt_ALLOC_WRITER_FUNCTIONS,
+        .string = (fmt_String) {
+            .data = (char *)malloc(INIT_CAP + 1),
+            .capacity = INIT_CAP,
+            .size = 0,
+        },
+    };
+    fmt_write_time((fmt_Writer*)&writer, format, datetime);
+    writer.string.data[writer.string.size] = '\0';
+    return writer.string;
 }
 
 #endif /* FMT_IMPLEMENTATION */
