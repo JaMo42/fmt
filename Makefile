@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -std=c11
+CFLAGS ?= -Wall -Wextra -std=c11 -D_POSIX_C_SOURCE=200809L
 LDFLAGS = -lm
 
 ifdef $(RELEASE)
@@ -11,14 +11,20 @@ endif
 all: test
 
 test: test.c fmt.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 .PHONY: run
 run: test
 	@./test
 
 threading_test: threading_test.c fmt.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+example: example.c fmt.h
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+fmt.3: fmt.3.md
+	pandoc --standalone --metadata date="`date +'%B %Y'`" --to man $< -o $@
 
 .PHONY: vg
 vg: test

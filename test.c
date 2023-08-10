@@ -56,9 +56,9 @@ static bool expect_impl(
         .at = buf,
         .end = buf + sizeof(buf),
     };
-    const int written = fmt_implementation((fmt_Writer *)&writer, fmt, arg_count, ap);
+    const int written = fmt_va_write((fmt_Writer *)&writer, fmt, arg_count, ap);
 #else
-    const int written = fmt_implementation(
+    const int written = fmt_va_write(
         FMT_NEW_STRING_WRITER(buf, sizeof(buf)), fmt, arg_count, ap
     );
 #endif
@@ -73,7 +73,7 @@ static bool expect_impl(
             _expected,                           \
             _fmt,                                \
             FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-            __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+            __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
         )) {                                     \
             su_fail();                           \
         }                                        \
@@ -169,7 +169,7 @@ static const char * my_parse_specifier(
             _type,                                     \
             _format,                                   \
             &arg_count                                 \
-            __VA_OPT__(, FMT__ARGS(__VA_ARGS__))       \
+            __VA_OPT__(, FMT_ARGS(__VA_ARGS__))       \
         );                                             \
         su_assert_eq(*end, '\0');                      \
         su_assert_eq(arg_count, 0);                    \

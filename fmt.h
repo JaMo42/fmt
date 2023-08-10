@@ -81,7 +81,7 @@ typedef uint_least8_t fmt_char8_t;
 #define FMT__CAT_2(a, b) a##b
 
 #define FMT__FOR_EACH_1(what, x) what(x)
-// no clue why the __VA_OPT__ is needed but without it FMT__ARGS breaks with
+// no clue why the __VA_OPT__ is needed but without it FMT_ARGS breaks with
 // only 1 arguments.  It seems like it's calling FMT__FOR_EACH_2 even though
 // there is only 1.  I don't know why and I couldn't fix it in another way.
 #define FMT__FOR_EACH_2(what, x, ...) what(x) __VA_OPT__(, FMT__FOR_EACH_1(what, __VA_ARGS__))
@@ -287,7 +287,7 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
 /// `param1, param2, param3` -> `type1, param1, type2, param2, type3, param3`
 /// WARNING: does not handle 0 parameters and must be wrapped in __VA_OPT__ by
 /// by the calling macro.
-#define FMT__ARGS(...) FMT__FOR_EACH(FMT__TYPE_ID_AND_VALUE, __VA_ARGS__)
+#define FMT_ARGS(...) FMT__FOR_EACH(FMT__TYPE_ID_AND_VALUE, __VA_ARGS__)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Writer interface
@@ -407,7 +407,7 @@ extern void fmt_init_threading();
 ///
 /// `ap` should contain pairs of type IDs and arguments.
 /// `arg_count` is the numer of those pairs.
-extern int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
+extern int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
 
 /// Implementation for the `fmt_write` macro.
 ///
@@ -421,7 +421,7 @@ extern int fmt_implementation(fmt_Writer *writer, const char *format, int arg_co
 ///         "{}: " _format,
 ///         1 + FMT_VA_ARG_COUNT(__VA_ARGS__),
 ///         current_time(),
-///         __VA_OPT__(, FMT__ARGS(__VA_ARGS__)
+///         __VA_OPT__(, FMT_ARGS(__VA_ARGS__)
 ///     )
 ///
 /// log("something {}", "happened");
@@ -432,39 +432,46 @@ extern int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...
 /// Implementation for the stdout and stderr printers which handles locking and
 /// adding a newline for the `-ln` variants.  It takes a stream because stdout
 /// and stderr are not const so we can't easily use static variables for them.
-extern int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...);
+extern int fmt__std_print(FILE *stream, const char *format, bool newline, int arg_count, ...);
 
 /// Implementation for the `fmt_panic` macro.
 FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *format, int arg_count, ...);
 
+/// Like fmt__format but takes a `va_list`, see `fmt_va_write`.
+extern fmt_String fmt_va_format(const char *format, int arg_count, va_list ap);
+
 /// Implementation for the `fmt_format` macro.
 extern fmt_String fmt__format(const char *format, int arg_count, ...);
+
+/// Like fmt__sprint but takes a `va_list`, see `fmt_va_write`.
+extern int fmt_va_sprint(char *string, size_t size, const char *format, int arg_count, va_list ap);
 
 /// Implementation for the `fmt_sprint` macro, this only exists for C++ builds
 /// which prevent usage of the `FMT_NEW_STRING_WRITER` macro.
 extern int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...);
 
+/// Like fmt__fprint but takes a `va_list`, see `fmt_va_write`.
+extern int fmt_va_fprint(FILE *stream, const char *format, int arg_count, va_list ap);
+
 /// Implementation for the `fmt_fprint` macro.
 extern int fmt__fprint(FILE *stream, const char *format, int arg_count, ...);
 
 /// Formats the broken-down time `datetime` per the specified format string.
-int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime);
+extern int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime);
 
 /// Like `fmt_write_time` with a string writer, but unlike `fmt_write_time` this will
 /// also add null terminator.
-int fmt_format_time_to(char *buf, size_t size, const char *format, const struct tm *datetime);
+extern int fmt_format_time_to(char *buf, size_t size, const char *format, const struct tm *datetime);
 
 /// Like `fmt_write_time` but writes to an allocated string.
-///
-/// See the `README.md` of this library for available specifiers.
-fmt_String fmt_format_time(const char *format, const struct tm *datetime);
+extern fmt_String fmt_format_time(const char *format, const struct tm *datetime);
 
 /// Translates a strftime format string into the fmt time format.
 ///
 /// The format specifiers inroduced by glibc are not supported.
 ///
 /// Moidifier ('E' and 'O') are not supported (fields can only be 1 character).
-void fmt_translate_strftime(const char *strftime, char *translated, int size);
+extern void fmt_translate_strftime(const char *strftime, char *translated, int size);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -480,7 +487,7 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
 /// result will be passed to the writer.
 ///
 /// If you already have a `va_list` with the type IDs and arguments use
-/// `fmt_implementation` instead.
+/// `fmt_va_write` instead.
 ///
 /// Examples:
 /// ```c
@@ -495,7 +502,7 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
         _writer,                             \
         _format,                             \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Prints to the standard output.
@@ -528,12 +535,12 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
 /// fflush(stdout);
 /// ```
 #define fmt_print(_format, ...)              \
-    fmt__default_printer(                    \
+    fmt__std_print(                    \
         stdout,                              \
         _format,                             \
         false,                               \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Prints to the standard output, with a newline.
@@ -552,12 +559,12 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
 /// fmt_println("format {} arguments", variable);
 /// ```
 #define fmt_println(_format, ...)            \
-    fmt__default_printer(                    \
+    fmt__std_print(                    \
         stdout,                              \
         _format,                             \
         true,                                \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Prints to the standard error.
@@ -568,12 +575,12 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
 /// Use `fmt_eprint` only for error and progress messages. Use `fmt_print`
 /// instead for the primary output of your program.
 #define fmt_eprint(_format, ...)             \
-    fmt__default_printer(                    \
+    fmt__std_print(                    \
         stderr,                              \
         _format,                             \
         false,                               \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Prints to the standard error, with a newline.
@@ -584,12 +591,12 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
 /// Use `fmt_eprintln` only for error and progress messages. Use `fmt_println`
 /// instead for the primary output of your program.
 #define fmt_eprintln(_format, ...)           \
-    fmt__default_printer(                    \
+    fmt__std_print(                    \
         stderr,                              \
         _format,                             \
         true,                                \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Accumulates formatted data in an allocated string.
@@ -614,9 +621,14 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
     fmt__format(                             \
         _format,                             \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
+/// Converts a single value to a string.  The returned string must be released
+/// using `free`.
+#define fmt_to_string(x) (fmt_format("{}", (x)).data)
+
+// TODO: rename to `fmt_format_to`?
 /// Writes formatted data into an existing buffer.
 /// Panics if more than `n - 1` characters are required, as null terminator is
 /// always added after the formatted data.
@@ -633,7 +645,7 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
         (_n),                                 \
         _format,                              \
         FMT_VA_ARG_COUNT(__VA_ARGS__)         \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__))  \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Aborts the program with an error message.
@@ -654,7 +666,7 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
         __LINE__,                            \
          _format,                            \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Convenience function for writing to a file.
@@ -678,7 +690,7 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size);
         _stream,                             \
         _format,                             \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT__ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 #endif /* FMT_H */
@@ -2403,7 +2415,7 @@ static const char * fmt__timezone_name(const struct tm *datetime) {
     fmt_panic("todo");
 #else
     // is not declated if _POSIX_C_SOURCE is not set appropriately, we could set
-    // it but a different file may have already included it before us.
+    // it but a different file may have already included <time.h> before us.
     extern char *tzname[2];
     return datetime->tm_isdst ? tzname[1] : tzname[0];
 #endif
@@ -2836,7 +2848,7 @@ t_fmt_string:
     );
 }
 
-int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va_list ap) {
+int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list ap) {
     int written = 0;
     const char *open_bracket = format;
     int specifier_number = 1;
@@ -2861,25 +2873,12 @@ int fmt_implementation(fmt_Writer *writer, const char *format, int arg_count, va
 int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...) {
     va_list ap;
     va_start(ap, arg_count);
-    const int written = fmt_implementation(writer, format, arg_count, ap);
+    const int written = fmt_va_write(writer, format, arg_count, ap);
     va_end(ap);
     return written;
 }
 
-int fmt__fprint(FILE *stream, const char *format, int arg_count, ...) {
-    fmt_Stream_Writer swriter = {
-        .base = fmt_STREAM_WRITER_FUNCTIONS,
-        .stream = stream,
-    };
-    fmt_Writer *writer = (fmt_Writer *)&swriter;
-    va_list ap;
-    va_start(ap, arg_count);
-    const int written = fmt_implementation(writer, format, arg_count, ap);
-    va_end(ap);
-    return written;
-}
-
-int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg_count, ...) {
+int fmt__std_print(FILE *stream, const char *format, bool newline, int arg_count, ...) {
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_lock(&fmt__print_mutex);
 #endif
@@ -2890,7 +2889,7 @@ int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg
     fmt_Writer *writer = (fmt_Writer *)&swriter;
     va_list ap;
     va_start(ap, arg_count);
-    const int written = fmt_implementation(writer, format, arg_count, ap) + newline;
+    const int written = fmt_va_write(writer, format, arg_count, ap) + newline;
     if (newline) {
         writer->write_byte(writer, '\n');
     }
@@ -2901,7 +2900,7 @@ int fmt__default_printer(FILE *stream, const char *format, bool newline, int arg
     return written;
 }
 
-fmt_String fmt__format(const char *format, int arg_count, ...) {
+fmt_String fmt_va_format(const char *format, int arg_count, va_list ap) {
     enum { INIT_CAP = 16 };
     fmt_Allocating_String_Writer writer = (fmt_Allocating_String_Writer) {
         .base = fmt_ALLOC_WRITER_FUNCTIONS,
@@ -2911,20 +2910,27 @@ fmt_String fmt__format(const char *format, int arg_count, ...) {
             .size = 0,
         },
     };
-    va_list ap;
-    va_start(ap, arg_count);
-    fmt_implementation((fmt_Writer*)&writer, format, arg_count, ap);
-    va_end(ap);
+    fmt_va_write((fmt_Writer*)&writer, format, arg_count, ap);
     // We always allocate capacity+1 so this is always within bounds.
     writer.string.data[writer.string.size] = '\0';
+    // TODO: maybe the capacity should be incremented here to represent the
+    // actualy value to the user?
     return writer.string;
+}
+
+fmt_String fmt__format(const char *format, int arg_count, ...) {
+    va_list ap;
+    va_start(ap, arg_count);
+    const fmt_String string = fmt_va_format(format, arg_count, ap);
+    va_end(ap);
+    return string;
 }
 
 // We need a 2nd function for this so we can use variadic arguments
 static void fmt__panic_loc(fmt_Writer *writer, ...) {
     va_list ap;
     va_start(ap, writer);
-    fmt_implementation(writer, "{}:{}: ", 2, ap);
+    fmt_va_write(writer, "{}:{}: ", 2, ap);
     va_end(ap);
 }
 
@@ -2940,7 +2946,7 @@ void fmt__panic(const char *file, int line, const char *format, int arg_count, .
     fmt__panic_loc(writer, fmt__TYPE_STRING, file, fmt__TYPE_INT, line);
     va_list ap;
     va_start(ap, arg_count);
-    fmt_implementation(writer, format, arg_count, ap);
+    fmt_va_write(writer, format, arg_count, ap);
     va_end(ap);
     if (format[strlen(format) - 1] != '\n') {
         writer->write_byte(writer, '\n');
@@ -2952,18 +2958,41 @@ void fmt__panic(const char *file, int line, const char *format, int arg_count, .
     abort();
 }
 
-int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...) {
+int fmt_va_sprint(char *string, size_t size, const char *format, int arg_count, va_list ap) {
     fmt_String_Writer writer = (fmt_String_Writer) {
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = string,
         .at = string,
         .end = string + size - 1,
     };
+    const int written = fmt_va_write((fmt_Writer *)&writer, format, arg_count, ap);
+    string[written] = '\0';
+    return written;
+}
+
+int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...) {
     va_list ap;
     va_start(ap, arg_count);
-    const int written = fmt_implementation((fmt_Writer *)&writer, format, arg_count, ap);
+    const int written = fmt_va_sprint(string, size, format, arg_count, ap);
     va_end(ap);
-    string[written] = '\0';
+    return written;
+}
+
+int fmt_va_fprint(FILE *stream, const char *format, int arg_count, va_list ap) {
+    fmt_Stream_Writer swriter = {
+        .base = fmt_STREAM_WRITER_FUNCTIONS,
+        .stream = stream,
+    };
+    fmt_Writer *writer = (fmt_Writer *)&swriter;
+    const int written = fmt_va_write(writer, format, arg_count, ap);
+    return written;
+}
+
+int fmt__fprint(FILE *stream, const char *format, int arg_count, ...) {
+    va_list ap;
+    va_start(ap, arg_count);
+    const int written = fmt_va_fprint(stream, format, arg_count, ap);
+    va_end(ap);
     return written;
 }
 
@@ -2994,7 +3023,7 @@ int fmt_format_time_to(char *buf, size_t size, const char *format, const struct 
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = buf,
         .at = buf,
-        .end = buf + size - 1
+        .end = buf + size - 1,
     };
     const int written = fmt_write_time((fmt_Writer*)&writer, format, datetime);
     *writer.at = '\0';
