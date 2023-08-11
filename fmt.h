@@ -1457,6 +1457,14 @@ static const char * fmt__parse_specifier_after_colon(
         format_specifier += fmt__utf8_decode(
             (const fmt_char8_t *)format_specifier, &out->group
         );
+#ifndef FMT_NO_LANGINFO
+        if (out->group == '.' || out->group == ',') {
+            const char *const thousep = nl_langinfo(THOUSEP);
+            if (*thousep) {
+                fmt__utf8_decode((const fmt_char8_t *)thousep, &out->group);
+            }
+        }
+#endif
     }
     // Precision
     if (*format_specifier == '.') {
@@ -2316,9 +2324,12 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     }
     written += fmt__write_float_integer_digits(writer, f, integer_width, groupchar, group_interval);
     if (!no_fraction) {
-        // TODO: locale?
         double unused, fraction = modf(f, &unused);
+#ifdef FMT_NO_LANGINFO
         written += writer->write_byte(writer, '.');
+#else
+        written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
+#endif
         if (fraction_width < 20) {
             const uint64_t as_int = round(fraction * fmt__pow10(fraction_width));
             if (as_int == 0) {
