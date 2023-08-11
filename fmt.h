@@ -2363,20 +2363,22 @@ static int fmt__print_float_decimal(
     return written;
 }
 
-static int fmt__print_float_exponential(fmt_Writer *writer, fmt_Format_Specifier *fs, double f) {
+static int fmt__print_float_exponential(
+    fmt_Writer *writer, fmt_Format_Specifier *fs, double f
+) {
     FMT__FLOAT_SPECIAL_CASES();
     int exp;
     fmt__get_base_and_exponent(f, &f, &exp);
     int written = fmt__print_float_decimal(writer, fs, f, 0);
     written += writer->write_byte(writer, 'e');
-    fs->width = 2 + (exp < 0);
+    fs->width = 3;
     fs->fill = '0';
     fs->align = fmt_ALIGN_AFTER_SIGN;
     fs->type = 'd';
     if (exp < 0) {
         written += fmt__print_int(writer, fs, -exp, '-');
     } else {
-        written += fmt__print_int(writer, fs, exp, 0);
+        written += fmt__print_int(writer, fs, exp, '+');
     }
     return written;
 }

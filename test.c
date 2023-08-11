@@ -445,8 +445,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("-" FMT_LOWER_NAN, "{}", -NAN);
         expect("-" FMT_UPPER_NAN, "{F}", -NAN);
         expect(FMT_LOWER_INF, "{}", HUGE_VAL);
-        expect("1.0e00", "{e}", 1.0);
-        expect("1.0e03", "{e}", 1000.0);
+        expect("1.0e+00", "{e}", 1.0);
+        expect("1.0e+03", "{e}", 1000.0);
         expect("1.0e-02", "{e}", 0.01);
         // Currently gives this: 7.378697629483820463747179019264876842498779296875e19
         //expect("7.3786976294838206464e19", "{e}", 0x1p66);
@@ -503,7 +503,7 @@ su_module(formatting, {
     su_test("precision", {
         expect("3.141000", "{:.6}", 3.141);
         expect("3", "{:.0}", 3.141);
-        expect("1.2e03", "{e:.1}", 1234.0);
+        expect("1.2e+03", "{e:.1}", 1234.0);
         expect(FMT_LOWER_INF, "{:.1}", INFINITY);
         expect("java", "{:.4}", "javascript");
         expect("안녕", "{:.2}", "안녕하세요");
