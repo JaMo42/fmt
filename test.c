@@ -477,6 +477,13 @@ su_module_d(basic_printing, "basic printing", {
         string.size = 5;
         expect("Hello World", "{} World", string);
     })
+
+    su_test("escaping", {
+        expect("{d}", "{{d}", 123);
+        // turns out we don't need to escape in the format specifier, but we
+        // probably should require it? (TODO)
+        expect("{{{12{345", "{d:{>9{}", 12345);
+    })
 })
 
 su_module(formatting, {

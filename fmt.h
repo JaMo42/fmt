@@ -2920,7 +2920,8 @@ int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list 
         if ((open_bracket = strchr(format, '{')) != NULL) {
             written += writer->write_data(writer, format, open_bracket - format);
             if (open_bracket[1] == '{') {
-                format = open_bracket;
+                written += writer->write_byte(writer, '{');
+                format = open_bracket + 2;
             } else {
                 written += fmt__print_specifier(
                     writer, &open_bracket, &arg_count, specifier_number++, ap
