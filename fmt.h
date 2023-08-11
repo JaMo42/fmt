@@ -2383,6 +2383,27 @@ static int fmt__print_float_exponential(
     return written;
 }
 
+static int fmt__print_float_dynamic(
+    fmt_Writer *writer, fmt_Format_Specifier *fs, double f
+) {
+    FMT__FLOAT_SPECIAL_CASES();
+    int exp;
+    double base;
+    fmt__get_base_and_exponent(f, &base, &exp);
+    if (fs->precision < 0) {
+        fs->precision = 6;
+    } else if (fs->precision == 0) {
+        fs->precision = 0;
+    }
+    if (exp < -4 || exp >= fs->precision) {
+        fs->precision -= fmt__float_integer_width(base);
+        return fmt__print_float_exponential(writer, fs, f);
+    } else {
+        fs->precision -= fmt__float_integer_width(f);
+        return fmt__print_float_decimal(writer, fs, f, 0);
+    }
+}
+
 #undef FMT__FLOAT_SPECIAL_CASES
 
 static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, const void *ptr) {
@@ -2905,12 +2926,22 @@ t_pointer:
     return fmt__print_pointer(writer, &fs, value.v_pointer);
 
 t_float:
-    if (fs.type == 'e' || fs.type == 'E') {
-        return fmt__print_float_exponential(writer, &fs, value.v_float);
-    } else if (fs.type == '%') {
-        return fmt__print_float_decimal(writer, &fs, value.v_float * 100.0, '%');
-    } else {
+    switch (fs.type) {
+    case 0:
+    case 'f':
+    case 'F':
         return fmt__print_float_decimal(writer, &fs, value.v_float, 0);
+
+    case '%':
+        return fmt__print_float_decimal(writer, &fs, value.v_float * 100.0, '%');
+
+    case 'e':
+    case 'E':
+        return fmt__print_float_exponential(writer, &fs, value.v_float);
+
+    case 'g':
+    case 'G':
+        return fmt__print_float_dynamic(writer, &fs, value.v_float);
     }
 
 t_bool:
