@@ -524,7 +524,7 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
         _writer,                             \
         _format,                             \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Prints to the standard output.
@@ -557,12 +557,12 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
 /// fflush(stdout);
 /// ```
 #define fmt_print(_format, ...)              \
-    fmt__std_print(                    \
+    fmt__std_print(                          \
         stdout,                              \
         _format,                             \
         false,                               \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Prints to the standard output, with a newline.
@@ -581,12 +581,12 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
 /// fmt_println("format {} arguments", variable);
 /// ```
 #define fmt_println(_format, ...)            \
-    fmt__std_print(                    \
+    fmt__std_print(                          \
         stdout,                              \
         _format,                             \
         true,                                \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Prints to the standard error.
@@ -597,12 +597,12 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
 /// Use `fmt_eprint` only for error and progress messages. Use `fmt_print`
 /// instead for the primary output of your program.
 #define fmt_eprint(_format, ...)             \
-    fmt__std_print(                    \
+    fmt__std_print(                          \
         stderr,                              \
         _format,                             \
         false,                               \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Prints to the standard error, with a newline.
@@ -613,12 +613,12 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
 /// Use `fmt_eprintln` only for error and progress messages. Use `fmt_println`
 /// instead for the primary output of your program.
 #define fmt_eprintln(_format, ...)           \
-    fmt__std_print(                    \
+    fmt__std_print(                          \
         stderr,                              \
         _format,                             \
         true,                                \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Accumulates formatted data in an allocated string.
@@ -643,7 +643,7 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
     fmt__format(                             \
         _format,                             \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Writes formatted data into an existing buffer.
@@ -662,7 +662,7 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
         (_n),                                 \
         _format,                              \
         FMT_VA_ARG_COUNT(__VA_ARGS__)         \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))   \
     )
 
 /// Aborts the program with an error message.
@@ -683,7 +683,7 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
         __LINE__,                            \
          _format,                            \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 /// Convenience function for writing to a file.
@@ -707,7 +707,7 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
         _stream,                             \
         _format,                             \
         FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
 #endif /* FMT_H */
@@ -792,7 +792,7 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
             // `t` is pretty useless here since it can only represent 127
             // seconds since the epoch but we want it to be equivalent to the
             // integer types.
-            return "cdxXbo";
+            return "bcdioxX";
         case fmt__TYPE_SIGNED_CHAR:
         case fmt__TYPE_SHORT:
         case fmt__TYPE_INT:
@@ -803,14 +803,14 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
         case fmt__TYPE_UNSIGNED:
         case fmt__TYPE_UNSIGNED_LONG:
         case fmt__TYPE_UNSIGNED_LONG_LONG:
-            return "cdxXbo";
+            return "bcdioxX";
         case fmt__TYPE_FLOAT:
         case fmt__TYPE_DOUBLE:
-            return "fFeEgG%";
+            return "eEfFgG%";
         case fmt__TYPE_STRING:
         case fmt__TYPE_STRING_16:
         case fmt__TYPE_STRING_32:
-            return "spP";
+            return "pPs";
         case fmt__TYPE_FMT_STRING:
             return "s";
         case fmt__TYPE_POINTER:
@@ -1845,36 +1845,36 @@ static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char
 }
 
 #define FMT_DEFINE_WRITE_DIGITS(_name, _div, _buf_size, _grouping_interval, _lookup_string) \
-    static int _name(fmt_Writer *writer, uint64_t n, int len) { \
-        if (n == 0) { \
-            return writer->write_byte(writer, '0'); \
-        } \
-        const char *digitpairs = _lookup_string; \
-        char buf[_buf_size]; \
-        char *p = buf + len - 2; \
-        int idx; \
-        while (n) { \
-            idx = (n % _div) * 2; \
-            memcpy(p, digitpairs + idx, 2); \
-            p -= 2; \
-            n /= _div; \
-        } \
-        return writer->write_data(writer, buf, len); \
-    } \
+    static int _name(fmt_Writer *writer, uint64_t n, int len) {                \
+        if (n == 0) {                                                          \
+            return writer->write_byte(writer, '0');                            \
+        }                                                                      \
+        const char *digitpairs = _lookup_string;                               \
+        char buf[_buf_size];                                                   \
+        char *p = buf + len - 2;                                               \
+        int idx;                                                               \
+        while (n) {                                                            \
+            idx = (n % _div) * 2;                                              \
+            memcpy(p, digitpairs + idx, 2);                                    \
+            p -= 2;                                                            \
+            n /= _div;                                                         \
+        }                                                                      \
+        return writer->write_data(writer, buf, len);                           \
+    }                                                                          \
     static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, char32_t groupchar) { \
-        if (n == 0) { \
-            return writer->write_byte(writer, '0'); \
-        } \
-        const char *digitpairs = _lookup_string; \
-        char buf[_buf_size]; \
-        char *p = buf + len - 2; \
-        int idx; \
-        while (n) { \
-            idx = (n % _div) * 2; \
-            memcpy(p, digitpairs + idx, 2); \
-            p -= 2; \
-            n /= _div; \
-        } \
+        if (n == 0) {                                                          \
+            return writer->write_byte(writer, '0');                            \
+        }                                                                      \
+        const char *digitpairs = _lookup_string;                               \
+        char buf[_buf_size];                                                   \
+        char *p = buf + len - 2;                                               \
+        int idx;                                                               \
+        while (n) {                                                            \
+            idx = (n % _div) * 2;                                              \
+            memcpy(p, digitpairs + idx, 2);                                    \
+            p -= 2;                                                            \
+            n /= _div;                                                         \
+        }                                                                      \
         return fmt__write_grouped(writer, buf, len, groupchar, _grouping_interval); \
     }
 
@@ -1986,6 +1986,7 @@ static const fmt_Base* fmt__get_base(char type) {
     switch (type) {
     case 0:
     case 'd':
+    case 'i':
         return &BASE_10;
     case 'x':
         return &BASE_16_LOWER;

@@ -415,6 +415,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("0", "{X}", 0);
         expect("0", "{o}", 0);
         expect("123", "{}", 123);
+        expect("123", "{d}", 123);
+        expect("123", "{i}", 123);
         expect("-123", "{}", -123);
         expect("123abc", "{x}", 0x123abc);
         expect("-123abc", "{x}", -0x123abc);
