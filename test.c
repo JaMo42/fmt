@@ -258,9 +258,8 @@ static int format_specifier_parsing_tests() {
         spec.precision == 456
     );
     expect_spec(fmt__TYPE_INT, "{:{}<0}", 'a')(
-        spec.fill == 'a', // zero padding only affects the fill character in the
-        // printing functions, not at parsing
-        spec.align == fmt_ALIGN_RIGHT, // but it does change the alignment
+        spec.fill == '0',
+        spec.align == fmt_ALIGN_AFTER_SIGN,
     );
 skip:
     return su__status;

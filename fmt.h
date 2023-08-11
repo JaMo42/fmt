@@ -1258,7 +1258,6 @@ typedef struct {
     int width;
     char type;
     bool alternate_form;
-    bool zero_pad;
 } fmt_Format_Specifier;
 
 static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
@@ -1267,7 +1266,6 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
     spec->align = fmt_ALIGN_LEFT;
     spec->sign = fmt_SIGN_NEGATIVE;
     spec->alternate_form = false;
-    spec->zero_pad = false;
     spec->width = 0;
     spec->group = 0;
     spec->precision = -1;
@@ -1300,7 +1298,6 @@ static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char 
     // functions we still need to default them so they don't cause problems.
     spec->sign = fmt_SIGN_NEGATIVE;
     spec->alternate_form = false;
-    spec->zero_pad = false;
     spec->group = 0;
 }
 
@@ -1443,8 +1440,8 @@ static const char * fmt__parse_specifier_after_colon(
     }
     // Zero-padding
     if (*format_specifier == '0') {
-        out->align = fmt_ALIGN_RIGHT;
-        out->zero_pad = true;
+        out->align = fmt_ALIGN_AFTER_SIGN;
+        out->fill = '0';
         ++format_specifier;
     }
     // Width
@@ -2223,17 +2220,9 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
 
     fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width, fs->align);
 
-    // TODO: but zero-padding sets the alignment to the right and overwrites
-    // the other alignment so this is always true?
-    // Only do zero-padding when aligning to the right, this follows the
-    // behaviour of printf.
-    fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
-    const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
-    const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
-
     int written = 0;
-    if (!pad_after_sign_and_base) {
-        written += fmt__pad(writer, pad.first, padchar);
+    if (fs->align != fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
     if (sign) {
         written += writer->write_byte(writer, sign);
@@ -2241,15 +2230,15 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
     if (fs->alternate_form) {
         written += writer->write_data(writer, base->prefix, base->prefix_len);
     }
-    if (pad_after_sign_and_base) {
-        written += fmt__pad(writer, pad.first, padchar);
+    if (fs->align == fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
     if (fs->group) {
         written += base->write_digits_grouped(writer, i, digits_width, fs->group);
     } else {
         written += base->write_digits(writer, i, digits_width);
     }
-    written += fmt__pad(writer, pad.second, padchar);
+    written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
 }
@@ -2318,19 +2307,16 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
 
     const int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width) + !!suffix;
     const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
-    fs->zero_pad &= fs->align == fmt_ALIGN_RIGHT;
-    const char32_t padchar = fs->zero_pad ? '0' : fs->fill;
-    const bool pad_after_sign_and_base = fs->zero_pad || fs->align == fmt_ALIGN_AFTER_SIGN;
 
     int written = 0;
-    if (!pad_after_sign_and_base) {
-        written += fmt__pad(writer, pad.first, padchar);
+    if (fs->align != fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
     if (sign) {
         written += writer->write_byte(writer, sign);
     }
-    if (pad_after_sign_and_base) {
-        written += fmt__pad(writer, pad.first, padchar);
+    if (fs->align == fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
     written += fmt__write_float_integer_digits(writer, f, integer_width, groupchar, group_interval);
     if (!no_fraction) {
@@ -2356,7 +2342,7 @@ static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs
     if (suffix) {
         written += writer->write_byte(writer, suffix);
     }
-    written += fmt__pad(writer, pad.second, padchar);
+    written += fmt__pad(writer, pad.second, fs->fill);
     return written;
 }
 
@@ -2367,8 +2353,8 @@ static int fmt__print_float_exponential(fmt_Writer *writer, fmt_Format_Specifier
     int written = fmt__print_float_decimal(writer, fs, f, 0);
     written += writer->write_byte(writer, 'e');
     fs->width = 2 + (exp < 0);
-    fs->zero_pad = true;
-    fs->align = fmt_ALIGN_RIGHT;
+    fs->fill = '0';
+    fs->align = fmt_ALIGN_AFTER_SIGN;
     fs->type = 'd';
     if (exp < 0) {
         written += fmt__print_int(writer, fs, -exp, '-');
