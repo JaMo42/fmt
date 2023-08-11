@@ -4,6 +4,7 @@
 #define FMT_IMPLEMENTATION
 //#define FMT_BIN_GROUP_NIBBLES
 #define FMT_DEFAULT_FLOAT_PRECISION -1
+#define FMT_FAST_DISPLAY_WIDTH
 #include "fmt.h"
 
 #define STRINGIFY_2(x) #x
@@ -305,6 +306,9 @@ su_module_d(internal_functions, "internal functions", {
         su_assert_eq(fmt__utf32_width(U"Hello", -1), 5);
         su_assert_eq(fmt__utf32_width(U"안녕", -1), 4);
         su_assert_eq(fmt__utf32_width(U"안녕", 1), 2);
+#ifndef FMT_FAST_DISPLAY_WIDTH
+        su_assert_eq(fmt__display_width(u'\u0303'), 0);
+#endif
     })
 
     su_test("float base and exponent", {
@@ -496,7 +500,7 @@ su_module_d(basic_printing, "basic printing", {
 })
 
 su_module(formatting, {
-    su_test("alignment", {
+    su_test("alignment (and width)", {
         expect("Hello    ", "{:9}", "Hello");
         expect("Hello    ", "{:<9}", "Hello");
         expect("    Hello", "{:>9}", "Hello");
@@ -535,7 +539,7 @@ su_module(formatting, {
         expect("1ä000", "{:ä}", 1000);
     })
 
-    su_test("padding", {
+    su_test("padding (and width)", {
         expect("10000", "{:0<5}", 100);
         expect("00100", "{:0>5}", 100);
         expect("0-100", "{:0>5}", -100);
@@ -546,6 +550,12 @@ su_module(formatting, {
         expect("äääabc", "{:ä>6}", "abc");
         expect("äääabc", "{:{}>6}", "abc", u'ä');
         expect("  1.234", "{:>7.}", 1234);
+#ifndef FMT_FAST_DISPLAY_WIDTH
+        expect(" ã ", "{:^3}", "a\u0303");
+#else
+        // Make sure we get the correct wrong result
+        expect("ã ", "{:^3}", "a\u0303");
+#endif
     })
 
     su_test("alternate form", {
