@@ -58,7 +58,7 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_UPPER_NAN "NAN"
 #endif
 
-// Detectign empty integer macro: https://stackoverflow.com/a/48540034
+// Detecting empty integer macro: https://stackoverflow.com/a/48540034
 #if defined(FMT_DEFAULT_FLOAT_PRECISION) \
     && ((0 - FMT_DEFAULT_FLOAT_PRECISION - 1) == 1 \
     && (FMT_DEFAULT_FLOAT_PRECISION + 0) != -2)
@@ -428,7 +428,7 @@ extern void fmt_init_threading();
 /// eventually call.
 ///
 /// `ap` should contain pairs of type IDs and arguments.
-/// `arg_count` is the numer of those pairs.
+/// `arg_count` is the number of those pairs.
 extern int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
 
 /// Implementation for the `fmt_write` macro.
@@ -490,9 +490,9 @@ extern fmt_String fmt_format_time(const char *format, const struct tm *datetime)
 
 /// Translates a strftime format string into the fmt time format.
 ///
-/// The format specifiers inroduced by glibc are not supported.
+/// The format specifiers introduced by glibc are not supported.
 ///
-/// Moidifier ('E' and 'O') are not supported (fields can only be 1 character).
+/// Modifiers ('E' and 'O') are not supported (fields can only be 1 character).
 extern void fmt_translate_strftime(const char *strftime, char *translated, int size);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -850,7 +850,9 @@ static void fmt__string_writer_check(fmt_String_Writer *self, int space) {
         const size_t capacity = self->end - self->string;
         const size_t size = self->at - self->string;
         fmt_panic(
-            "string writer overflow\n   content: \"{:.{}}\"\n  capacity: {}\n      size: {}",
+            "string writer overflow\n   content: \
+{:.{}}\
+\n  capacity: {}\n      size: {}",
             self->string, size, capacity, size
         );
     }
@@ -923,7 +925,7 @@ int fmt__write_metric_str (fmt_Writer *p_self, const char *str) {
 // Names and types have been changed to fit this library.  We use the "fmt__"
 // prefix as all internal functions and append the "mk_" prefix to it (short
 // for the name of the author, Markus Kuhn).
-// We use the non-CJK variant.
+// We only use the non-CJK variant.
 //
 // Original copyright notice:
 //    Permission to use, copy, modify, and distribute this software
@@ -1542,7 +1544,7 @@ static const char * fmt__parse_specifier_after_colon(
     int parsed;
     // Alignment
     if ((parsed = fmt__parse_alignment(*format_specifier))) {
-        // Only alignemnt
+        // Only alignment
         out->align = (fmt_Alignment)parsed;
         ++format_specifier;
     } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 1)))) {
@@ -1603,7 +1605,7 @@ static const char * fmt__parse_specifier_after_colon(
         );
     }
     // Grouping
-    // If we have a . the next charater must also be a . or the end of the
+    // If we have a . the next character must also be a . or the end of the
     // specifier for it to be the grouping character.  Anything else in this
     // position must be the grouping character.
     char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
@@ -1710,7 +1712,7 @@ static const char * fmt__parse_time_specifier(
     }
     // Alignment
     if ((parsed = fmt__parse_alignment(*format_specifier))) {
-        // Only alignemnt
+        // Only alignment
         out->align = (fmt_Alignment)parsed;
         ++format_specifier;
     } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 1)))) {
@@ -1806,7 +1808,7 @@ static const char * fmt__parse_embedded_time_specifier(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Auxillary functions for printing functions
+// Auxiliary functions for printing functions
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
@@ -2552,7 +2554,7 @@ static int fmt__print_float_dynamic(
     if (fs->precision < 0) {
         fs->precision = 6;
     } else if (fs->precision == 0) {
-        fs->precision = 0;
+        fs->precision = 1;
     }
     if (exp < -4 || exp >= fs->precision) {
         fs->precision -= fmt__float_integer_width(base);
@@ -2618,7 +2620,7 @@ void fmt_translate_strftime(const char *strftime, char *translated, int size) {
         case '%':
             if (*++strftime == '%') {
                 // TODO: format specifiers
-                // we probably don't need to care abouy format specifier as this
+                // we probably don't need to care about format specifier as this
                 // is used for strings from the locale which shouldn't contain
                 // GNU extensions.
                 *translated++ = '%';
@@ -2661,7 +2663,7 @@ static const char * fmt__timezone_name(const struct tm *datetime) {
 #ifdef _MSC_VER
     fmt_panic("todo");
 #else
-    // is not declated if _POSIX_C_SOURCE is not set appropriately, we could set
+    // is not declared if _POSIX_C_SOURCE is not set appropriately, we could set
     // it but a different file may have already included <time.h> before us.
     extern char *tzname[2];
     return datetime->tm_isdst ? tzname[1] : tzname[0];
@@ -2985,7 +2987,7 @@ static int fmt__print_specifier(
             goto t_unsigned;
         }
 
-        // Note: cases reading differnt types from the variadic arguments than
+        // Note: cases reading different types from the variadic arguments than
         // their type ID specifier are not errors but those values are promoted
         // to the used type when passed through `...`.
 
