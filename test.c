@@ -619,6 +619,8 @@ su_module(datetime, {
     datetime_value.tm_wday = 6;
     datetime_value.tm_yday = 7;
     datetime_value.tm_isdst = false; // daylight savings
+    datetime_value.tm_zone = "Hello World";
+    datetime_value.tm_gmtoff = -14400; // -4 hours
     const struct tm *datetime = &datetime_value;
 
     su_test("basic time printing", {
@@ -631,6 +633,8 @@ su_module(datetime, {
         expect_time("03:02:01 AM", "{r}", datetime);
         expect_time("03:02", "{R}", datetime);
         expect_time("03:02:01", "{T}", datetime);
+        expect_time("-0400", "{z}", datetime);
+        expect_time("Hello World", "{Z}", datetime);
     })
 
     su_test("12 hour clock", {

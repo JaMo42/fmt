@@ -655,11 +655,11 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
 /// reallocate just to add it.
 /// The `size` field contains the length of the formatted text (without the null
 /// terminator).
-#define fmt_format(_format, ...)             \
-    fmt__format(                             \
-        _format,                             \
-        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
+#define fmt_format(_format, ...)            \
+    fmt__format(                            \
+        _format,                            \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)       \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
 /// Writes formatted data into an existing buffer.
@@ -2725,10 +2725,7 @@ static const char * fmt__timezone_name(const struct tm *datetime) {
 #ifdef _MSC_VER
     fmt_panic("todo");
 #else
-    // is not declared if _POSIX_C_SOURCE is not set appropriately, we could set
-    // it but a different file may have already included <time.h> before us.
-    extern char *tzname[2];
-    return datetime->tm_isdst ? tzname[1] : tzname[0];
+    return datetime->tm_zone;
 #endif
 }
 
