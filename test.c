@@ -4,7 +4,7 @@
 #define FMT_IMPLEMENTATION
 //#define FMT_BIN_GROUP_NIBBLES
 #define FMT_DEFAULT_FLOAT_PRECISION -1
-#define FMT_FAST_DISPLAY_WIDTH
+//#define FMT_FAST_DISPLAY_WIDTH
 #include "fmt.h"
 
 #define STRINGIFY_2(x) #x
@@ -440,6 +440,7 @@ su_module_d(basic_printing, "basic printing", {
     su_test("floats", {
         expect("3.1410000000000000142108547152020037174224853515625", "{}", 3.141);
         expect("0.0123456789", "{:.10}", 0.0123456789);
+        expect("-3.141", "{:.3}", -3.141);
         expect(FMT_LOWER_INF, "{}", INFINITY);
         expect(FMT_UPPER_INF, "{F}", INFINITY);
         expect(FMT_LOWER_NAN, "{}", NAN);
@@ -522,6 +523,12 @@ su_module(formatting, {
         // Booleans are treated as strings
         // The cast to bool is needed for C11 builds
         expect("t", "{:.1}", (bool)true);
+        expect("3.14", "{g:.3}", 3.14159265359);
+        expect("314", "{g:.3}", 314.159265359);
+        expect("3.14e+04", "{g:.3}", 31415.9265359);
+        expect("3.14e+06", "{g:.3}", 3141592.65359);
+        expect("3.14e+08", "{g:.3}", 314159265.359);
+        expect("3e+08", "{g:.0}", 314159265.359);
     })
 
     su_test("grouping", {
@@ -547,6 +554,7 @@ su_module(formatting, {
         expect("-0100", "{:0=5}", -100);
         expect("- 100", "{:=5}", -100);
         expect("  2  ", "{:^5.0}", 2.0);
+        expect("-   2.0", "{:=7}", -2.0);
         expect("äääabc", "{:ä>6}", "abc");
         expect("äääabc", "{:{}>6}", "abc", u'ä');
         expect("  1.234", "{:>7.}", 1234);
@@ -635,6 +643,7 @@ su_module(datetime, {
     su_test("embedded formatting", {
         expect("  03:02  ", "{%{H}:{M}%:^9}", datetime);
         expect("  Satu  ", "{%{A:.4}%:^8}", datetime);
+        expect("  Satu  ", "{%{A}%:^8.4}", datetime);
         expect("::Sat::", "{%{a}%::^7}", datetime);
         expect("::Sat Jun 4 03:02:01 2023::", "{::^27}", datetime);
     })
