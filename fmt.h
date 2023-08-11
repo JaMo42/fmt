@@ -1710,6 +1710,35 @@ static int fmt__unsigned_width(unsigned long long n, int base) {
     }
 }
 
+static int fmt__grouping_width(int length, int base, char32_t groupchar) {
+    const int groupwidth = fmt__display_width(groupchar);
+    // Pretty dodgy to have these hardcoded here.
+    int interval;
+    switch (base) {
+    case 2:
+#ifdef FMT_BIN_GROUP_NIBBLES
+        interval = 4;
+#else
+        interval = 8;
+#endif
+        break;
+
+    case 8:
+        interval = 4;
+        break;
+
+    case 10:
+        interval = 3;
+        break;
+
+    case 16:
+        interval = 4;
+        break;
+    }
+    const int groupchars = (length - 1) / interval;
+    return groupchars * groupwidth;
+}
+
 static int fmt__min(int a, int b) {
     return a < b ? a : b;
 }
@@ -2157,7 +2186,12 @@ static int fmt__print_char(fmt_Writer *writer, fmt_Format_Specifier *fs, char32_
 static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned long long i, char sign) {
     const fmt_Base *base = fmt__get_base(fs->type);
     const int digits_width = fmt__unsigned_width(i, base->base);
-    const int width = digits_width + !!sign;
+    const int width = (digits_width + !!sign
+                       + (fs->group
+                          ? fmt__grouping_width(
+                                digits_width, base->base, fs->group
+                            )
+                          : 0));
 
     fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width, fs->align);
 
