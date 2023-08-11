@@ -3091,7 +3091,7 @@ static int fmt__print_specifier(
                 FMT_PARSE_FS();
                 goto t_pointer;
             }
-            fmt_panic("Unimplemented argument type at specifier {}", specifier_number);
+            fmt_panic("unimplemented argument type at specifier {}", specifier_number);
 
         case fmt__TYPE_ID_COUNT:; // to silence compiler warnings
     }

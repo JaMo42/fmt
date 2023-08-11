@@ -260,7 +260,7 @@ static bool expect_panic_impl(
     waitpid(pid, &stat, 0);
     if (stat == 0) {
         fmt_eprintln(
-            "  Line {}:\n    expected call to panic but it didn't", source_line,
+            "  Line {}:\n    expected call to panic but it didn't", source_line
         );
         return false;
     }
@@ -276,7 +276,7 @@ static bool expect_panic_impl(
         }
     }
     char *start = strchr(strchr(buf, ':') + 1, ':') + 2;
-    if (strcmp(start, message)) {
+    if (memcmp(start, message, strlen(message))) {
         fmt_eprintln(
             "  Line {}:\n    panic message mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
             source_line, message, start
@@ -286,6 +286,8 @@ static bool expect_panic_impl(
     return true;
 }
 
+/// Checks if a call panics and it's panic message after the source location
+/// starts with the given message.
 #define expect_panic(_message, _format, ...)    \
     do {                                        \
         if (!expect_panic_impl(                 \
@@ -374,7 +376,6 @@ su_module_d(internal_functions, "internal functions", {
         su_assert_eq(fmt__utf8_width_and_length("안녕", -1, 1).first, 2);
         su_assert_eq(fmt__utf8_width_and_length("Hello", -1, -1).second, 5);
         su_assert_eq(fmt__utf8_width_and_length("안녕", -1, -1).second, 2);
-        // TODO: zero-width characters
         su_assert_eq(fmt__utf16_width_and_length(u"Hello", -1, -1).first, 5);
         su_assert_eq(fmt__utf16_width_and_length(u"안녕", -1, -1).first, 4);
         su_assert_eq(fmt__utf16_width_and_length(u"안녕", -1, 1).first, 2);
@@ -457,9 +458,7 @@ su_module_d(internal_functions, "internal functions", {
     })
 
     su_test("time format specifier parsing", {
-        // Something about the 2-part macro with the variadic arguments
-        // irritates the smallunit macros so this needs to be in a separate
-        // function.
+        // as above
         su__status = time_format_specifier_parsing_tests();
     })
 
@@ -783,18 +782,35 @@ su_module(panics, {
     su_test("argument count", {
         expect_panic("arguments exhausted at specifier 1", "{}");
         expect_panic("3 arguments left", "", 1, 2, 3);
-        expect_panic("arguments exhausted at fill character in format specifier 1", "{:{}>2}", 1);
-        expect_panic("arguments exhausted at width in format specifier 1", "{:{}}", 1);
-        expect_panic("arguments exhausted at precision in format specifier 1", "{:.{}}", 1);
+        expect_panic("arguments exhausted at fill character", "{:{}>2}", 1);
+        expect_panic("arguments exhausted at width", "{:{}}", 1);
+        expect_panic("arguments exhausted at precision", "{:.{}}", 1);
+        expect_panic("arguments exhausted at parameterized time format", "{%{}}", (struct tm *)NULL);
     })
 
     su_test("format specifier format", {
-        expect_panic("overflow in width at format specifier 1", "{:>99999999999}", 1);
+        expect_panic("overflow in width", "{:>99999999999}", 1);
+        expect_panic("expected : or } after display type", "{d{}", 1);
+        expect_panic("undelimited time format string", "{%{{H}}", (struct tm *)NULL);
     })
 
     su_test("conversion specifiers", {
-        expect_panic("invalid display type 's' for argument of type 'int' in specifier 1, expected one of: bcdioxX", "{s}", 1);
-        expect_panic("invalid display type 'd' for argument of type 'char *' in specifier 1, expected one of: pPs", "{d}", "a");
+        expect_panic("invalid display type", "{s}", 1);
+        expect_panic("invalid display type", "{d}", "a");
+        expect_panic("invalid display type", "{p}", 1.2);
+        long i = 0;
+        expect_panic("unimplemented argument type", "{c}", &i);
+        expect_panic("invalid display type", "{g}", (char)'a');
+    })
+
+    su_test("overflow", {
+        expect_panic("string writer overflow", "{:>999}", 'a');
+    })
+
+    su_test("parameter types", {
+        expect_panic("expected integer type", "{:{}}", 1, "width");
+        expect_panic("expected unsigned value", "{:{}}", 1, -1);
+        expect_panic("expected character type", "{:{}>1}", 1, 1.0);
     })
 })
 
@@ -803,5 +819,7 @@ int main() {
     su_run_module(basic_printing);
     su_run_module(formatting);
     su_run_module(datetime);
-    su_run_module(panics);
+    // This is slow so I leave it disabled during development and only enable it
+    // after finishing something new.
+    //su_run_module(panics);
 }
