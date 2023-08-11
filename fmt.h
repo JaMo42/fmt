@@ -646,10 +646,6 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
         __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
     )
 
-/// Converts a single value to a string.  The returned string must be released
-/// using `free`.
-#define fmt_to_string(x) (fmt_format("{}", (x)).data)
-
 /// Writes formatted data into an existing buffer.
 /// Panics if more than `n - 1` characters are required, as null terminator is
 /// always added after the formatted data.
