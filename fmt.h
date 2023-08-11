@@ -189,7 +189,31 @@ typedef enum {
     fmt__TYPE_POINTER,
     fmt__TYPE_TIME,
     fmt__TYPE_FMT_STRING,
+    fmt__TYPE_ID_COUNT,
 } fmt_Type_Id;
+
+static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
+    "(unknown)",
+    "char",
+    "signed char",
+    "short",
+    "int",
+    "long long",
+    "unsigned char",
+    "unsigned short",
+    "unsigned",
+    "unsigned long",
+    "unsigned long long",
+    "float",
+    "double",
+    "bool",
+    "char *",
+    "char16_t *",
+    "char32_t *",
+    "void *",
+    "struct tm *",
+    "fmt_String",
+};
 
 #ifdef _MSC_VER
 #define fmt__TYPE_WSTRING fmt__TYPE_STRING_16
@@ -794,6 +818,8 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
         case fmt__TYPE_STRING_16:
         case fmt__TYPE_STRING_32:
             return "spP";
+        case fmt__TYPE_FMT_STRING:
+            return "s";
         case fmt__TYPE_POINTER:
         case fmt__TYPE_UNKNOWN:
             return "pP";
@@ -1474,8 +1500,10 @@ static const char * fmt__parse_specifier(
             out->type = parsed;
         } else {
             fmt_panic(
-                "invalid display type '{}' in specifier {}, expected one of: {}",
+                "invalid display type '{}' for argument of type '{}' in "
+                "specifier {}, expected one of: {}",
                 (char)parsed,
+                fmt_Type_Names[(int)type],
                 specifier_number,
                 valid
             );
@@ -2806,6 +2834,8 @@ static int fmt__print_specifier(
                 goto t_pointer;
             }
             fmt_panic("Unimplemented argument type at specifier {}", specifier_number);
+
+        case fmt__TYPE_ID_COUNT: // to silence compiler warnings
     }
 
     #undef FMT_PARSE_FS

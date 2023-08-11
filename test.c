@@ -457,11 +457,13 @@ su_module_d(basic_printing, "basic printing", {
     su_test("pointers", {
         const void *p = (void *)0x123;
         const char *s = (char *)0x123;
+        const int *i = (int *)0x123;
         expect("123", "{}", p);
         expect("123", "{p}", s);
+        expect("123", "{p}", i);
         expect("abc", "{}", (void*)0xabc);
-        expect("ABC", "{P:}", (void*)0xabc);
-        expect("ABC", "{P:}", (char*)0xabc);
+        expect("ABC", "{P}", (void*)0xabc);
+        expect("ABC", "{P}", (char*)0xabc);
     })
 
     su_test("fmt_String", {
@@ -527,6 +529,7 @@ su_module(formatting, {
         expect("  2  ", "{:^5.0}", 2.0);
         expect("äääabc", "{:ä>6}", "abc");
         expect("äääabc", "{:{}>6}", "abc", u'ä');
+        expect("  1.234", "{:>7.}", 1234);
     })
 
     su_test("alternate form", {
