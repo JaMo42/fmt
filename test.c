@@ -385,6 +385,28 @@ su_module_d(internal_functions, "internal functions", {
         // function.
         su__status = time_format_specifier_parsing_tests();
     })
+
+    su_test("strftime format string translation", {
+        enum { COUNT = 3};
+        const char **sources = ((const char*[COUNT]){
+            "%H",
+            "%%",
+            "{a}",
+        });
+        const char **expected = ((const char*[COUNT]){
+            "{H}",
+            "%",
+            "{{a}}"
+        });
+        char buf[6];
+        for (int i = 0; i < COUNT; ++i) {
+            fmt_translate_strftime(sources[i], buf, sizeof(buf));
+            if (strcmp(buf, expected[i]) != 0) {
+                fmt_eprintln("\"{}\" != \"{}\"", buf, expected[i]);
+                su_fail();
+            }
+        }
+    })
 })
 
 su_module_d(basic_printing, "basic printing", {
