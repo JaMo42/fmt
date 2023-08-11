@@ -260,8 +260,7 @@ static bool expect_panic_impl(
     waitpid(pid, &stat, 0);
     if (stat == 0) {
         fmt_eprintln(
-            "  Line {}:\n    expected call to panic but it didn't",
-            source_line,
+            "  Line {}:\n    expected call to panic but it didn't", source_line,
         );
         return false;
     }
@@ -781,9 +780,21 @@ su_module(datetime, {
 })
 
 su_module(panics, {
-    su_test("wrong argument count", {
-        expect_panic("Arguments exhausted at specifier 1", "{}");
+    su_test("argument count", {
+        expect_panic("arguments exhausted at specifier 1", "{}");
         expect_panic("3 arguments left", "", 1, 2, 3);
+        expect_panic("arguments exhausted at fill character in format specifier 1", "{:{}>2}", 1);
+        expect_panic("arguments exhausted at width in format specifier 1", "{:{}}", 1);
+        expect_panic("arguments exhausted at precision in format specifier 1", "{:.{}}", 1);
+    })
+
+    su_test("format specifier format", {
+        expect_panic("overflow in width at format specifier 1", "{:>99999999999}", 1);
+    })
+
+    su_test("conversion specifiers", {
+        expect_panic("invalid display type 's' for argument of type 'int' in specifier 1, expected one of: bcdioxX", "{s}", 1);
+        expect_panic("invalid display type 'd' for argument of type 'char *' in specifier 1, expected one of: pPs", "{d}", "a");
     })
 })
 

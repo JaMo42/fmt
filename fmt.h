@@ -196,6 +196,7 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
     "signed char",
     "short",
     "int",
+    "long",
     "long long",
     "unsigned char",
     "unsigned short",
@@ -1541,7 +1542,7 @@ static const char * fmt__parse_int(
             ++format_specifier;
             if (*arg_count == 0) {
                 fmt_panic(
-                    "Arguments exhaused at {} in format specifier {}",
+                    "arguments exhausted at {} in format specifier {}",
                     what,
                     specifier_number
                 );
@@ -1550,7 +1551,7 @@ static const char * fmt__parse_int(
             --*arg_count;
         } else {
             fmt_eprintln(
-                "\nMissing } for parameterized {} at format specifier {}",
+                "\nmissing } for parameterized {} at format specifier {}",
                 what,
                 specifier_number
             );
@@ -1558,23 +1559,18 @@ static const char * fmt__parse_int(
     } else if (isdigit(*format_specifier)) {
         *out = 0;
         int last;
-        bool overflow = false;
         while (isdigit(*format_specifier)) {
             last = *out;
             *out *= 10;
             *out += *format_specifier - '0';
-            if (*out < last && !overflow) {
-                fmt_eprintln(
-                    "\nOverflow in {} at format specifier {}",
+            if (*out < last) {
+                fmt_panic(
+                    "\noverflow in {} at format specifier {}",
                     what,
                     specifier_number
                 );
-                overflow = true;
             }
             ++format_specifier;
-        }
-        if (overflow) {
-            *out = 0;
         }
     }
     return format_specifier;
@@ -2987,7 +2983,7 @@ static int fmt__print_specifier(
     va_list ap
 ) {
     if (*arg_count == 0) {
-        fmt_panic("\nArguments exhausted at specifier {}", specifier_number);
+        fmt_panic("\narguments exhausted at specifier {}", specifier_number);
     }
     --*arg_count;
     fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
