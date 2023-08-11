@@ -3204,6 +3204,9 @@ int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list 
             written += writer->write_str(writer, format);
         }
     }
+    if (arg_count) {
+        fmt_panic("{} arguments left", arg_count);
+    }
     return written;
 }
 

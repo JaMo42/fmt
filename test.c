@@ -1,3 +1,9 @@
+#define _GNU_SOURCE
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
 #include <smallunit.h>
 #include <icecream.h>
 
@@ -221,6 +227,78 @@ static const char * my_parse_specifier(
             }                                                              \
         }                                                                  \
     } while (0)
+
+////////////////////////////////////////////////////////////////////////////////
+// Panic
+////////////////////////////////////////////////////////////////////////////////
+
+static bool expect_panic_impl(
+    int source_line, const char *message, const char *format, int arg_count, ...
+) {
+    static char buf[256];
+    int pipe_ends[2];
+    pipe(pipe_ends);
+    const int rx = pipe_ends[0];
+    const int tx = pipe_ends[1];
+    const int pid = fork();
+    switch (pid) {
+    case -1:
+        fmt_panic("fork failed");
+
+    case 0:
+        dup2(tx, STDERR_FILENO);
+        close(rx);
+        va_list ap;
+        va_start(ap, arg_count);
+        fmt_va_sprint(buf, sizeof(buf), format, arg_count, ap);
+        va_end(ap);
+        close(tx);
+        exit(EXIT_SUCCESS);
+    }
+    close(tx);
+    int stat = -1;
+    waitpid(pid, &stat, 0);
+    if (stat == 0) {
+        fmt_eprintln(
+            "  Line {}:\n    expected call to panic but it didn't",
+            source_line,
+        );
+        return false;
+    }
+    const ssize_t n = read(rx, buf, sizeof(buf));
+    buf[n - 1] = '\0';
+    close(rx);
+    // I have no idea why but inserts a newline between the fmt__panic_loc
+    // and fmt_va_write calls here.  This does not happen when printing to
+    // the terminal.
+    for (int i = 0; i < n; ++i) {
+        if (buf[i] == '\n') {
+            memmove(buf + i, buf + i + 1, n - i);
+        }
+    }
+    char *start = strchr(strchr(buf, ':') + 1, ':') + 2;
+    if (strcmp(start, message)) {
+        fmt_eprintln(
+            "  Line {}:\n    panic message mismatch:\n      expected: \"{}\"\n      got:      \"{}\"",
+            source_line, message, start
+        );
+        return false;
+    }
+    return true;
+}
+
+#define expect_panic(_message, _format, ...)    \
+    do {                                        \
+        if (!expect_panic_impl(                 \
+            __LINE__,                           \
+            _message,                           \
+            _format,                            \
+            FMT_VA_ARG_COUNT(__VA_ARGS__)       \
+            __VA_OPT__(, FMT_ARGS(__VA_ARGS__)) \
+        )) {                                    \
+            su_fail();                          \
+        }                                       \
+    } while(0)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Unicode test cases
@@ -512,7 +590,7 @@ su_module_d(basic_printing, "basic printing", {
     })
 
     su_test("escaping", {
-        expect("{d}", "{{d}", 123);
+        expect("{d}", "{{d}");
         // turns out we don't need to escape in the format specifier, but we
         // probably should require it? (TODO)
         expect("{{{12{345", "{d:{>9{}", 12345);
@@ -702,9 +780,17 @@ su_module(datetime, {
     })
 })
 
+su_module(panics, {
+    su_test("wrong argument count", {
+        expect_panic("Arguments exhausted at specifier 1", "{}");
+        expect_panic("3 arguments left", "", 1, 2, 3);
+    })
+})
+
 int main() {
     su_run_module(internal_functions);
     su_run_module(basic_printing);
     su_run_module(formatting);
     su_run_module(datetime);
+    su_run_module(panics);
 }
