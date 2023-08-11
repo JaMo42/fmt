@@ -2714,7 +2714,8 @@ static int fmt__write_time_sized(
             last_format = format;
             written += writer->write_data(writer, format, open_bracket - format);
             if (open_bracket[1] == '{') {
-                format = open_bracket;
+                written += writer->write_byte(writer, '{');
+                format = open_bracket + 2;
             } else {
                 written += fmt__print_time_specifier(
                     writer, &open_bracket, specifier_number++, datetime
@@ -3113,7 +3114,8 @@ int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *date
         if ((open_bracket = strchr(format, '{')) != NULL) {
             written += writer->write_data(writer, format, open_bracket - format);
             if (open_bracket[1] == '{') {
-                format = open_bracket;
+                written += writer->write_byte(writer, '{');
+                format = open_bracket + 2;
             } else {
                 written += fmt__print_time_specifier(
                     writer, &open_bracket, specifier_number++, datetime

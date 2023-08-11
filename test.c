@@ -489,6 +489,9 @@ su_module_d(basic_printing, "basic printing", {
         // turns out we don't need to escape in the format specifier, but we
         // probably should require it? (TODO)
         expect("{{{12{345", "{d:{>9{}", 12345);
+        expect_time("{H}", "{{H}", NULL);
+        expect("{H}", "{%{{H}%}", (struct tm *)NULL);
+        expect("{H}", "{%{}}", (struct tm *)NULL, "{{H}");
     })
 })
 
