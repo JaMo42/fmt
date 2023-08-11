@@ -2979,8 +2979,8 @@ fmt_String fmt_va_format(const char *format, int arg_count, va_list ap) {
     fmt_va_write((fmt_Writer*)&writer, format, arg_count, ap);
     // We always allocate capacity+1 so this is always within bounds.
     writer.string.data[writer.string.size] = '\0';
-    // TODO: maybe the capacity should be incremented here to represent the
-    // actualy value to the user?
+    // Increment capacity to be the real value for the user.
+    ++writer.string.capacity;
     return writer.string;
 }
 
