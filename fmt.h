@@ -1818,7 +1818,14 @@ static const char * fmt__parse_embedded_time_specifier(
         ++format_specifier;
         const char *time_string;
         if (format_specifier[0] == '{' && format_specifier[1] == '}') {
+            if (*arg_count == 0) {
+                fmt_panic(
+                    "arguments exhausted at parameterized time format in format specifier {}",
+                    specifier_number
+                );
+            }
             time_string = fmt__va_get_utf8_string(ap);
+            --*arg_count;
             *time_string_out = time_string;
             *time_string_length_out = strlen(time_string);
             format_specifier += 2;
