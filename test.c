@@ -550,6 +550,13 @@ su_module(formatting, {
         expect("yes", "{:#}", (bool)true);
         expect("no", "{:#}", (bool)false);
     })
+
+    su_test("signing", {
+        expect("+123", "{:+}", 123);
+        expect(" 123", "{: }", 123);
+        expect("+2.0", "{:+}", 2.0);
+        expect(" 2.0", "{: }", 2.0);
+    })
 })
 
 su_module(datetime, {

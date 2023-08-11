@@ -2033,7 +2033,7 @@ static int fmt__float_fraction_width(double f) {
     }
     // no fraction, we want a single zero so width 1
     if (!width) {
-        ++width;
+        width = 1;
     };
     return width;
 }
@@ -2212,6 +2212,13 @@ static int fmt__print_char(fmt_Writer *writer, fmt_Format_Specifier *fs, char32_
 static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned long long i, char sign) {
     const fmt_Base *base = fmt__get_base(fs->type);
     const int digits_width = fmt__unsigned_width(i, base->base);
+    if (!sign) {
+        if (fs->sign == fmt_SIGN_ALWAYS) {
+            sign = '+';
+        } else if (fs->sign == fmt_SIGN_SPACE) {
+            sign = ' ';
+        }
+    }
     const int width = (digits_width + !!sign
                        + (fs->group
                           ? fmt__grouping_width(
@@ -2275,12 +2282,18 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
         }                                                                                  \
     } while(0)
 
-static int fmt__print_float_decimal(fmt_Writer *writer, fmt_Format_Specifier *fs, double f, char suffix) {
+static int fmt__print_float_decimal(
+    fmt_Writer *writer, fmt_Format_Specifier *fs, double f, char suffix
+) {
     FMT__FLOAT_SPECIAL_CASES();
     char sign = 0;
     if (f < 0.0) {
         sign = '-';
         f = -f;
+    } else if (fs->sign == fmt_SIGN_ALWAYS) {
+        sign = '+';
+    } else if (fs->sign == fmt_SIGN_SPACE) {
+        sign = ' ';
     }
     bool no_fraction;
     int fraction_width;
