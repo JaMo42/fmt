@@ -1,6 +1,9 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -std=c11 -D_POSIX_C_SOURCE=200809L
+CFLAGS ?= -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE
 LDFLAGS = -lm
+
+CXX ?= g++
+CXXFLAGS ?= -Wall -Wextra -D_DEFAULT_SOURCE
 
 ifeq ($(RELEASE),1)
 	CFLAGS += -march=native -mtune=native -O3
@@ -33,8 +36,10 @@ threading_test: threading_test.c fmt.h
 example: example.c fmt.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-fmt.3: fmt.3.md
-	pandoc --standalone --metadata date="`date +'%B %Y'`" --to man $< -o $@
+cpp_build: test.c fmt.h
+	cp test.c test.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+	rm test.cpp
 
 .PHONY: vg
 vg: test

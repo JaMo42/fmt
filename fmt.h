@@ -2473,7 +2473,7 @@ static void fmt__get_timezone_offset(const struct tm *datetime, char buf[5]) {
 #ifdef _MSC_VER
     fmt_panic("todo");
 #else
-    long offset = datetime->__tm_gmtoff;
+    long offset = datetime->tm_gmtoff;
     if (offset < 0) {
         offset = -offset;
         *buf++ = '-';
@@ -2488,6 +2488,25 @@ static void fmt__get_timezone_offset(const struct tm *datetime, char buf[5]) {
     memcpy(buf, fmt__DECIMAL_DIGIT_PAIRS + minutes * 2, 2);
     buf[2] = '\0';
 #endif
+}
+
+/// Used by `fmt__print_time_specifier`, it's a separate function because
+/// otherwise we'd need to jump over the declaration of the writer as we can't
+/// declare it on top and set the member as most of the are `const`.
+static int fmt__write_grouped_time(
+    char *buf, size_t size, const char *format, const struct tm *datetime
+) {
+    fmt_String_Writer group_writer = {
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = buf,
+        .at = buf,
+        .end = buf + size,
+    };
+    const int end = fmt_write_time(
+        (fmt_Writer *)&group_writer, format, datetime
+    );
+    buf[end] = '\0';
+    return end;
 }
 
 static int fmt__print_time_specifier(
@@ -2517,6 +2536,8 @@ static int fmt__print_time_specifier(
         nl_item v_locale_item;
 #endif
     } value;
+    struct tm my_datetime;
+    char large_buf[128], small_buf[32], *buf_ptr;
 
     *format_specifier = fmt__parse_time_specifier(
         *format_specifier, &spec, specifier_number
@@ -2565,7 +2586,7 @@ static int fmt__print_time_specifier(
 
     case 's':
         // mktime normalizes the structure so we need a copy
-        struct tm my_datetime = *datetime;
+        my_datetime = *datetime;
         value.v_unsigned = mktime(&my_datetime);
         goto t_unsigned;
 
@@ -2597,45 +2618,32 @@ t_unsigned:
     return fmt__print_int(writer, &spec, value.v_unsigned, 0);
 
 t_ampm_lower:
-    char lower[16];
-    char *w = lower;
+    buf_ptr = small_buf;
     for (const char *p = value.v_string; *p; ++p) {
-        *w++ = tolower(*p);
+        *buf_ptr++ = tolower(*p);
     }
-    *w = '\0';
-    value.v_string = lower;
+    *buf_ptr = '\0';
+    value.v_string = small_buf;
     goto t_string;
 
 t_timezone:
-    char tzbuf[6];
-    fmt__get_timezone_offset(datetime, tzbuf);
-    value.v_string = tzbuf;
+    fmt__get_timezone_offset(datetime, small_buf);
+    value.v_string = small_buf;
     goto t_string;
 
 #ifndef FMT_NO_LANGINFO
 t_locale_group:
-    char translated[32];
     value.v_string = nl_langinfo(value.v_locale_item);
-    fmt_translate_strftime(value.v_string, translated, sizeof(translated));
-    value.v_string = translated;
+    fmt_translate_strftime(value.v_string, small_buf, sizeof(small_buf));
+    value.v_string = small_buf;
     /* fallthrough */
 #endif
 
 t_group:
-    // note: needs to be quite large for UTF-8.
-    char buf[64];
-    fmt_String_Writer group_writer = {
-        .base = fmt_STRING_WRITER_FUNCTIONS,
-        .string = buf,
-        .at = buf,
-        .end = buf + sizeof(buf),
-    };
-    const char *group_format_specifier = value.v_string;
-    const int end = fmt_write_time(
-        (fmt_Writer *)&group_writer, group_format_specifier, datetime
+    fmt__write_grouped_time(
+        large_buf, sizeof(large_buf), value.v_string, datetime
     );
-    buf[end] = '\0';
-    value.v_string = buf;
+    value.v_string = large_buf;
     /* fallthrough */
 
 t_string:
@@ -2821,7 +2829,7 @@ static int fmt__print_specifier(
             }
             fmt_panic("Unimplemented argument type at specifier {}", specifier_number);
 
-        case fmt__TYPE_ID_COUNT: // to silence compiler warnings
+        case fmt__TYPE_ID_COUNT:; // to silence compiler warnings
     }
 
     #undef FMT_PARSE_FS
