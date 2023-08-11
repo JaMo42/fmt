@@ -75,10 +75,8 @@ typedef uint_least8_t fmt_char8_t;
 // Recursive macros
 ////////////////////////////////////////////////////////////////////////////////
 
-// TODO: I copied this, why does it use 2 indirections?
 #define FMT__CAT(a, b) FMT__CAT_1(a, b)
-#define FMT__CAT_1(a, b) FMT__CAT_2(a, b)
-#define FMT__CAT_2(a, b) a##b
+#define FMT__CAT_1(a, b) a##b
 
 #define FMT__FOR_EACH_1(what, x) what(x)
 // no clue why the __VA_OPT__ is needed but without it FMT_ARGS breaks with
@@ -652,7 +650,6 @@ extern void fmt_translate_strftime(const char *strftime, char *translated, int s
 /// using `free`.
 #define fmt_to_string(x) (fmt_format("{}", (x)).data)
 
-// TODO: rename to `fmt_format_to`?
 /// Writes formatted data into an existing buffer.
 /// Panics if more than `n - 1` characters are required, as null terminator is
 /// always added after the formatted data.
@@ -2056,13 +2053,12 @@ static int fmt__write_float_integer_digits(
     int written = length;
     while (length--) {
         div = pow(10.0, length);
-        digit = (int)(f / div) % 10;
+        digit = (int)fmod(f / div, 10.0);
         writer->write_byte(writer, '0' + digit);
         // We don't check if group_interval is 0 here but since group_at starts
         // at 0 in that case we need to overflow it and then go all the way
         // back to 0 until it matters, I'm not sure if that can actually happen
         // but I will just leave it like this for now.
-        // TODO: verify it
         if (group_at-- == 0) {
             writer->write_byte(writer, groupchar);
             ++written;
