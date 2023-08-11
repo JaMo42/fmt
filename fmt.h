@@ -357,6 +357,12 @@ typedef struct {
     size_t width;
 } fmt_Metric_Writer;
 
+typedef struct {
+    const fmt_Writer base;
+    fmt_Writer *inner;
+    int characters_left;
+} fmt_Limited_Writer;
+
 int fmt__write_stream_byte(fmt_Writer *p_self, char byte);
 int fmt__write_stream_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_stream_str (fmt_Writer *p_self, const char *str);
@@ -372,6 +378,10 @@ int fmt__write_alloc_str (fmt_Writer *p_self, const char *str);
 int fmt__write_metric_byte(fmt_Writer *p_self, char byte);
 int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n);
 int fmt__write_metric_str (fmt_Writer *p_self, const char *str);
+
+int fmt__write_limited_byte(fmt_Writer *p_self, char byte);
+int fmt__write_limited_data(fmt_Writer *p_self, const char *data, size_t n);
+int fmt__write_limited_str (fmt_Writer *p_self, const char *str);
 
 static const fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_stream_byte,
@@ -395,6 +405,12 @@ static const fmt_Writer fmt_METRIC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_metric_byte,
     .write_data = fmt__write_metric_data,
     .write_str = fmt__write_metric_str,
+};
+
+static const fmt_Writer fmt_LIMITED_WRITER_FUNCTIONS = {
+    .write_byte = fmt__write_limited_byte,
+    .write_data = fmt__write_limited_data,
+    .write_str = fmt__write_limited_str,
 };
 
 // Note: these macros don't work in C++ because you can't take the address of
@@ -920,6 +936,22 @@ int fmt__write_metric_str (fmt_Writer *p_self, const char *str) {
     return fmt__write_metric_data(p_self, str, strlen(str));
 }
 
+int fmt__write_limited_byte(fmt_Writer *p_self, char byte) {
+    fmt_Limited_Writer *self = (fmt_Limited_Writer *)p_self;
+    int written = 0;
+    if (self->characters_left) {
+        written += self->inner->write_byte(self->inner, byte);
+        --self->characters_left;
+    }
+    return written;
+}
+
+// fmt__write_limited_data is defined after the unicode utilities.
+
+int fmt__write_limited_str (fmt_Writer *p_self, const char *str) {
+    return fmt__write_limited_data(p_self, str, strlen(str));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // wcwidth implementation from https://www.cl.cam.ac.uk/~mgk25/ucs/wcwidth.c
 // Names and types have been changed to fit this library.  We use the "fmt__"
@@ -1384,6 +1416,20 @@ int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n) {
     self->characters += width_and_length.second;
     self->width += width_and_length.first;
     return n;
+}
+
+static int fmt__min(int, int);
+
+int fmt__write_limited_data(fmt_Writer *p_self, const char *data, size_t n) {
+    fmt_Limited_Writer *self = (fmt_Limited_Writer *)p_self;
+    int written = 0;
+    if (self->characters_left) {
+        const int length = fmt__utf8_width_and_length(data, n, n).second;
+        const int write = fmt__min(length, self->characters_left);
+        written += fmt__write_utf8(self->inner, data, write);
+        self->characters_left -= write;
+    }
+    return written;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2594,19 +2640,35 @@ static int fmt__print_time(
     };
     fmt__write_time_sized((fmt_Writer*)&metric, format, format_length, datetime);
 
-    int to_print = metric.characters;
-    if (fs->precision > 0 && fs->precision < to_print) {
-        to_print = fs->precision;
-    }
-
-    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - metric.width, fs->align);
-
     int written = 0;
-    written += fmt__pad(writer, pad.first, fs->fill);
-    written += fmt__write_time_sized(writer, format, format_length, datetime);
-    written += fmt__pad(writer, pad.second, fs->fill);
-
-    return written;
+    fmt_Int_Pair pad;
+    if (fs->precision > 0 && fs->precision < (int)metric.characters) {
+        fmt_Limited_Writer inner_writer = {
+            .base = fmt_LIMITED_WRITER_FUNCTIONS,
+            .inner = (fmt_Writer*)&metric,
+            .characters_left = fs->precision,
+        };
+        metric.bytes = 0;
+        metric.characters = 0;
+        metric.width = 0;
+        // re-calculate limited metrics for padding
+        fmt__write_time_sized((fmt_Writer*)&inner_writer, format, format_length, datetime);
+        pad = fmt__distribute_padding(fs->width - metric.width, fs->align);
+        inner_writer.inner = writer;
+        inner_writer.characters_left = fs->precision;
+        written += fmt__pad(writer, pad.first, fs->fill);
+        written += fmt__write_time_sized(
+            (fmt_Writer*)&inner_writer, format, format_length, datetime
+        );
+        written += fmt__pad(writer, pad.second, fs->fill);
+        return written;
+    } else {
+        pad = fmt__distribute_padding(fs->width - metric.width, fs->align);
+        written += fmt__pad(writer, pad.first, fs->fill);
+        written += fmt__write_time_sized(writer, format, format_length, datetime);
+        written += fmt__pad(writer, pad.second, fs->fill);
+        return written;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
