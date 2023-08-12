@@ -55,6 +55,12 @@ typedef uint_least8_t fmt_char8_t;
 
 #define FMT_TIME_DELIM '%'
 
+// Apparently C++ doesn't have this.
+#if defined(__cplusplus) && !defined(restrict)
+#  define FMT__MY_RESTRICT
+#  define restrict
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 // Recursive macros
 ////////////////////////////////////////////////////////////////////////////////
@@ -303,11 +309,17 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
 /// "vtable" for writers
 typedef struct fmt_Writer {
     /// Writes a single byte
-    int (*const write_byte)(struct fmt_Writer *self, char byte);
+    int (*const write_byte)(
+        struct fmt_Writer *self, char byte
+    );
     /// Writes `n` bytes of `data`
-    int (*const write_data)(struct fmt_Writer *self, const char *data, size_t n);
+    int (*const write_data)(
+        struct fmt_Writer *restrict self, const char *restrict data, size_t n
+    );
     /// Writes `str` until a null-byte is encountered
-    int (*const write_str)(struct fmt_Writer *self, const char *str);
+    int (*const write_str)(
+        struct fmt_Writer *restrict self, const char *restrict str
+    );
 } fmt_Writer;
 
 typedef struct {
@@ -352,24 +364,24 @@ typedef struct {
 } fmt_Limited_Writer;
 
 int fmt__write_stream_byte(fmt_Writer *p_self, char byte);
-int fmt__write_stream_data(fmt_Writer *p_self, const char *data, size_t n);
-int fmt__write_stream_str (fmt_Writer *p_self, const char *str);
+int fmt__write_stream_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
+int fmt__write_stream_str (fmt_Writer *restrict p_self, const char *restrict str);
 
 int fmt__write_string_byte(fmt_Writer *p_self, char byte);
-int fmt__write_string_data(fmt_Writer *p_self, const char *data, size_t n);
-int fmt__write_string_str (fmt_Writer *p_self, const char *str);
+int fmt__write_string_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
+int fmt__write_string_str (fmt_Writer *restrict p_self, const char *restrict str);
 
 int fmt__write_alloc_byte(fmt_Writer *p_self, char byte);
-int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n);
-int fmt__write_alloc_str (fmt_Writer *p_self, const char *str);
+int fmt__write_alloc_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
+int fmt__write_alloc_str (fmt_Writer *restrict p_self, const char *restrict str);
 
 int fmt__write_metric_byte(fmt_Writer *p_self, char byte);
-int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n);
-int fmt__write_metric_str (fmt_Writer *p_self, const char *str);
+int fmt__write_metric_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
+int fmt__write_metric_str (fmt_Writer *restrict p_self, const char *restrict str);
 
 int fmt__write_limited_byte(fmt_Writer *p_self, char byte);
-int fmt__write_limited_data(fmt_Writer *p_self, const char *data, size_t n);
-int fmt__write_limited_str (fmt_Writer *p_self, const char *str);
+int fmt__write_limited_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
+int fmt__write_limited_str (fmt_Writer *restrict p_self, const char *restrict str);
 
 static const fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_stream_byte,
@@ -433,7 +445,12 @@ extern void fmt_init_threading();
 ///
 /// `ap` should contain pairs of type IDs and arguments.
 /// `arg_count` is the number of those pairs.
-extern int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
+extern int fmt_va_write(
+    fmt_Writer *restrict writer,
+    const char *restrict format,
+    int arg_count,
+    va_list ap
+);
 
 /// Implementation for the `fmt_write` macro.
 ///
@@ -453,15 +470,29 @@ extern int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, v
 /// log("something {}", "happened");
 /// ```
 /// (note that this macro would need backslashes for multiple lines).
-extern int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...);
+extern int fmt__write(
+    fmt_Writer *restrict writer, const char *restrict format, int arg_count, ...
+);
 
 /// Implementation for the stdout and stderr printers which handles locking and
 /// adding a newline for the `-ln` variants.  It takes a stream because stdout
 /// and stderr are not const so we can't easily use static variables for them.
-extern int fmt__std_print(FILE *stream, const char *format, bool newline, int arg_count, ...);
+extern int fmt__std_print(
+    FILE *restrict stream,
+    const char *restrict format,
+    bool newline,
+    int arg_count,
+    ...
+);
 
 /// Implementation for the `fmt_panic` macro.
-FMT__NORETURN extern void fmt__panic(const char *file, int line, const char *format, int arg_count, ...);
+FMT__NORETURN extern void fmt__panic(
+    const char *restrict file,
+    int line,
+    const char *restrict format,
+    int arg_count,
+    ...
+);
 
 /// Like fmt__format but takes a `va_list`, see `fmt_va_write`.
 extern fmt_String fmt_va_format(const char *format, int arg_count, va_list ap);
@@ -470,34 +501,63 @@ extern fmt_String fmt_va_format(const char *format, int arg_count, va_list ap);
 extern fmt_String fmt__format(const char *format, int arg_count, ...);
 
 /// Like fmt__sprint but takes a `va_list`, see `fmt_va_write`.
-extern int fmt_va_sprint(char *string, size_t size, const char *format, int arg_count, va_list ap);
+extern int fmt_va_sprint(
+    char *restrict string,
+    size_t size,
+    const char *restrict format,
+    int arg_count,
+    va_list ap
+);
 
 /// Implementation for the `fmt_sprint` macro, this only exists for C++ builds
 /// which prevent usage of the `FMT_NEW_STRING_WRITER` macro.
-extern int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...);
+extern int fmt__sprint(
+    char *restrict string,
+    size_t size,
+    const char *restrict format,
+    int arg_count,
+    ...
+);
 
 /// Like fmt__fprint but takes a `va_list`, see `fmt_va_write`.
-extern int fmt_va_fprint(FILE *stream, const char *format, int arg_count, va_list ap);
+extern int fmt_va_fprint(
+    FILE *restrict stream, const char *restrict format, int arg_count, va_list ap
+);
 
 /// Implementation for the `fmt_fprint` macro.
-extern int fmt__fprint(FILE *stream, const char *format, int arg_count, ...);
+extern int fmt__fprint(
+    FILE *restrict stream, const char *restrict format, int arg_count, ...
+);
 
 /// Formats the broken-down time `datetime` per the specified format string.
-extern int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime);
+extern int fmt_write_time(
+    fmt_Writer *restrict writer,
+    const char *restrict format,
+    const struct tm *restrict datetime
+);
 
 /// Like `fmt_write_time` with a string writer, but unlike `fmt_write_time` this will
 /// also add null terminator.
-extern int fmt_format_time_to(char *buf, size_t size, const char *format, const struct tm *datetime);
+extern int fmt_format_time_to(
+    char *restrict buf,
+    size_t size,
+    const char *restrict format,
+    const struct tm *restrict datetime
+);
 
 /// Like `fmt_write_time` but writes to an allocated string.
-extern fmt_String fmt_format_time(const char *format, const struct tm *datetime);
+extern fmt_String fmt_format_time(
+    const char *restrict format, const struct tm *restrict datetime
+);
 
 /// Translates a strftime format string into the fmt time format.
 ///
 /// The format specifiers introduced by glibc are not supported.
 ///
 /// Modifiers ('E' and 'O') are not supported (fields can only be 1 character).
-extern void fmt_translate_strftime(const char *strftime, char *translated, int size);
+extern void fmt_translate_strftime(
+    const char *restrict strftime, char *restrict translated, int size
+);
 
 ////////////////////////////////////////////////////////////////////////////////
 // User-facing wrapper macros
@@ -835,12 +895,12 @@ int fmt__write_stream_byte(fmt_Writer *p_self, char byte) {
     return 1;
 }
 
-int fmt__write_stream_data(fmt_Writer *p_self, const char *data, size_t n) {
+int fmt__write_stream_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n) {
     fmt_Stream_Writer *self = (fmt_Stream_Writer*)p_self;
     return (int)fwrite(data, 1, n, self->stream);
 }
 
-int fmt__write_stream_str(fmt_Writer *p_self, const char *str) {
+int fmt__write_stream_str(fmt_Writer *restrict p_self, const char *restrict str) {
     fmt_Stream_Writer *self = (fmt_Stream_Writer*)p_self;
     // fputs doesn't give use the number of bytes written.
     const size_t len = strlen(str);
@@ -869,7 +929,9 @@ int fmt__write_string_byte(fmt_Writer *p_self, char byte) {
     return 1;
 }
 
-int fmt__write_string_data(fmt_Writer *p_self, const char *data, size_t n) {
+int fmt__write_string_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+) {
     fmt_String_Writer *self = (fmt_String_Writer *)p_self;
     fmt__string_writer_check(self, n);
     memcpy(self->at, data, n);
@@ -877,7 +939,9 @@ int fmt__write_string_data(fmt_Writer *p_self, const char *data, size_t n) {
     return n;
 }
 
-int fmt__write_string_str (fmt_Writer *p_self, const char *str) {
+int fmt__write_string_str (
+    fmt_Writer *restrict p_self, const char *restrict str
+) {
     return fmt__write_string_data(p_self, str, strlen(str));
 }
 
@@ -903,7 +967,9 @@ int fmt__write_alloc_byte(fmt_Writer *p_self, char byte) {
     return 1;
 }
 
-int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n) {
+int fmt__write_alloc_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+) {
     fmt_Allocating_String_Writer *self = (fmt_Allocating_String_Writer *)p_self;
     fmt__string_will_append(&self->string, n);
     memcpy(self->string.data + self->string.size, data, n);
@@ -911,7 +977,7 @@ int fmt__write_alloc_data(fmt_Writer *p_self, const char *data, size_t n) {
     return n;
 }
 
-int fmt__write_alloc_str(fmt_Writer *p_self, const char *str) {
+int fmt__write_alloc_str(fmt_Writer *restrict p_self, const char *restrict str) {
     return fmt__write_alloc_data(p_self, str, strlen(str));
 }
 
@@ -920,7 +986,9 @@ int fmt__write_alloc_str(fmt_Writer *p_self, const char *str) {
 // fmt__write_metric_byte and fmt__write_metric_data are defined after the
 // unicode utilities on which they rely.
 
-int fmt__write_metric_str (fmt_Writer *p_self, const char *str) {
+int fmt__write_metric_str (
+    fmt_Writer *restrict p_self, const char *restrict str
+) {
     return fmt__write_metric_data(p_self, str, strlen(str));
 }
 
@@ -936,7 +1004,9 @@ int fmt__write_limited_byte(fmt_Writer *p_self, char byte) {
 
 // fmt__write_limited_data is defined after the unicode utilities.
 
-int fmt__write_limited_str (fmt_Writer *p_self, const char *str) {
+int fmt__write_limited_str (
+    fmt_Writer *restrict p_self, const char *restrict str
+) {
     return fmt__write_limited_data(p_self, str, strlen(str));
 }
 
@@ -1165,32 +1235,36 @@ static int fmt__display_width(char32_t ucs) {
 
 /// Decodes 1 codepoint from valid UTF-8 data.  Returns the number of bytes the
 /// codepoint uses.
-static int fmt__utf8_decode(const fmt_char8_t *data, char32_t *codepoint) {
-        if (data[0] < 0x80) {
-            *codepoint = data[0];
-            return 1;
-        } else if (data[0] < 0xe0) {
-            *codepoint = ((char32_t)(data[0] & 0x1f) << 6) | (data[1] & 0x3f);
-            return 2;
-        } else if (data[0] < 0xf0) {
-            *codepoint = (((char32_t)(data[0] & 0x0f) << 12)
-                         | ((char32_t)(data[1] & 0x3f) << 6)
-                         | (data[2] & 0x3f));
-            return 3;
-        } else {
-            *codepoint = (((char32_t)(data[0] & 0x07) << 18)
-                         | ((char32_t)(data[1] & 0x3f) << 12)
-                         | ((char32_t)(data[2] & 0x3f) << 6)
-                         | (data[3] & 0x3f));
-            return 4;
-        }
+static int fmt__utf8_decode(
+    const fmt_char8_t *restrict data, char32_t *restrict codepoint
+) {
+    if (data[0] < 0x80) {
+        *codepoint = data[0];
+        return 1;
+    } else if (data[0] < 0xe0) {
+        *codepoint = ((char32_t)(data[0] & 0x1f) << 6) | (data[1] & 0x3f);
+        return 2;
+    } else if (data[0] < 0xf0) {
+        *codepoint = (((char32_t)(data[0] & 0x0f) << 12)
+                        | ((char32_t)(data[1] & 0x3f) << 6)
+                        | (data[2] & 0x3f));
+        return 3;
+    } else {
+        *codepoint = (((char32_t)(data[0] & 0x07) << 18)
+                        | ((char32_t)(data[1] & 0x3f) << 12)
+                        | ((char32_t)(data[2] & 0x3f) << 6)
+                        | (data[3] & 0x3f));
+        return 4;
+    }
 }
 
 /// Returns the display width and number of codepoints in a UTF-8 encoded string.
 /// If `size` is negative it is determined using `strlen`.
 /// If `max_chars_for_width` is non-negative only that many characters are used
 /// for the width calculation.
-static fmt_Int_Pair fmt__utf8_width_and_length(const char *str, int size, int max_chars_for_width) {
+static fmt_Int_Pair fmt__utf8_width_and_length(
+    const char *str, int size, int max_chars_for_width
+) {
     int width = 0;
     int length = 0;
     if (size < 0) {
@@ -1224,7 +1298,9 @@ static size_t fmt__utf16_strlen(const char16_t *str) {
 /// If `size` is negative it is determined using `strlen`.
 /// If `max_chars_for_width` is non-negative only that many characters are used
 /// for the width calculation.
-static fmt_Int_Pair fmt__utf16_width_and_length(const char16_t *str, int size, int max_chars_for_width) {
+static fmt_Int_Pair fmt__utf16_width_and_length(
+    const char16_t *str, int size, int max_chars_for_width
+) {
     int width = 0;
     int length = 0;
     if (size < 0) {
@@ -1302,7 +1378,9 @@ static int fmt__utf8_encode(char32_t codepoint, char *buf) {
 }
 
 /// `len` is the number of codepoints.
-static int fmt__write_utf8(fmt_Writer *writer, const char *str, int len) {
+static int fmt__write_utf8(
+    fmt_Writer *restrict writer, const char *restrict str, int len
+) {
     const char *end = str;
     while (len --> 0) {
         end += fmt__utf8_codepoint_length(*end);
@@ -1317,7 +1395,9 @@ static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
 }
 
 /// `len` is the number of codepoints.
-static int fmt__write_utf16(fmt_Writer *writer, const char16_t *str, int len) {
+static int fmt__write_utf16(
+    fmt_Writer *restrict writer, const char16_t *restrict str, int len
+) {
     char32_t c;
     int written = 0;
     while (len --> 0) {
@@ -1333,7 +1413,9 @@ static int fmt__write_utf16(fmt_Writer *writer, const char16_t *str, int len) {
     return written;
 }
 
-static int fmt__write_utf32(fmt_Writer *writer, const char32_t *str, int len) {
+static int fmt__write_utf32(
+    fmt_Writer *restrict writer, const char32_t *restrict str, int len
+) {
     int written = 0;
     while (len --> 0) {
         written += fmt__write_codepoint(writer, *str++);
@@ -1385,7 +1467,9 @@ static char32_t fmt__utf8_peek_ascii(const char *str, int index) {
     return *fmt__utf8_skip(str, index);
 }
 
-static bool fmt__starts_with(const char *str, const char *with, int len) {
+static bool fmt__starts_with(
+    const char *restrict str, const char *restrict with, int len
+) {
     return memcmp(str, with, len) == 0;
 }
 
@@ -1397,7 +1481,9 @@ int fmt__write_metric_byte(fmt_Writer *p_self, char byte) {
     return 1;
 }
 
-int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n) {
+int fmt__write_metric_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+) {
     fmt_Metric_Writer *self = (fmt_Metric_Writer *)p_self;
     self->bytes += n;
     const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(data, n, n);
@@ -1406,9 +1492,13 @@ int fmt__write_metric_data(fmt_Writer *p_self, const char *data, size_t n) {
     return n;
 }
 
-static int fmt__min(int, int);
+static int fmt__min(int a, int b) {
+    return a < b ? a : b;
+}
 
-int fmt__write_limited_data(fmt_Writer *p_self, const char *data, size_t n) {
+int fmt__write_limited_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+) {
     fmt_Limited_Writer *self = (fmt_Limited_Writer *)p_self;
     int written = 0;
     if (self->characters_left) {
@@ -1459,7 +1549,9 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
     spec->precision = -1;
 }
 
-static void fmt__time_format_specifier_default(fmt_Format_Specifier *spec, char field) {
+static void fmt__time_format_specifier_default(
+    fmt_Format_Specifier *spec, char field
+) {
     static const char ZERO_PADDED[] = "HMSIdyYjuwmC";
     spec->fill = strchr(ZERO_PADDED, field) ? '0' : ' ';
     spec->align = fmt_ALIGN_RIGHT;
@@ -1516,11 +1608,11 @@ static int fmt__parse_sign(char ch) {
 /// Parses or gets a parameterized integer for the width and precision fields of
 /// the format specifier.
 static const char * fmt__parse_int(
-    const char *format_specifier,
-    const char *what,
-    int *out,
+    const char *restrict format_specifier,
+    const char *restrict what,
+    int *restrict out,
     int specifier_number,
-    int *arg_count,
+    int *restrict arg_count,
     va_list ap
 ) {
     if (*format_specifier == '{') {
@@ -1564,10 +1656,10 @@ static const char * fmt__parse_int(
 }
 
 static const char * fmt__parse_specifier_after_colon(
-    const char *format_specifier,
-    fmt_Format_Specifier *out,
+    const char *restrict format_specifier,
+    fmt_Format_Specifier *restrict out,
     int specifier_number,
-    int *arg_count,
+    int *restrict arg_count,
     va_list ap
 ) {
     int parsed;
@@ -1667,11 +1759,11 @@ static const char * fmt__parse_specifier_after_colon(
 }
 
 static const char * fmt__parse_specifier(
-    const char *format_specifier,
-    fmt_Format_Specifier *out,
+    const char *restrict format_specifier,
+    fmt_Format_Specifier *restrict out,
     fmt_Type_Id type,
     int specifier_number,
-    int *arg_count,
+    int *restrict arg_count,
     va_list ap
 ) {
     int parsed;
@@ -1713,8 +1805,8 @@ static const char * fmt__parse_specifier(
 }
 
 static const char * fmt__parse_time_specifier(
-    const char *format_specifier,
-    fmt_Format_Specifier *out,
+    const char *restrict format_specifier,
+    fmt_Format_Specifier *restrict out,
     int specifier_number
 ) {
     static const char *const ALL_FIELDS = "HMSaAbBdyYIjpPrRTuwcexXmCFszZ";
@@ -1780,12 +1872,12 @@ static const char * fmt__parse_time_specifier(
 }
 
 static const char * fmt__parse_embedded_time_specifier(
-    const char *format_specifier,
-    fmt_Format_Specifier *out,
-    const char **time_string_out,
-    int *time_string_length_out,
+    const char *restrict format_specifier,
+    fmt_Format_Specifier *restrict out,
+    const char *restrict *restrict time_string_out,
+    int *restrict time_string_length_out,
     int specifier_number,
-    int *arg_count,
+    int *restrict arg_count,
     va_list ap
 ) {
     fmt__format_specifier_default(out);
@@ -1962,10 +2054,6 @@ static int fmt__grouping_width(int length, int base, char32_t groupchar) {
     return groupchars * groupwidth;
 }
 
-static int fmt__min(int a, int b) {
-    return a < b ? a : b;
-}
-
 static int fmt__pad(fmt_Writer *writer, int n, char32_t ch) {
     if (n <= 0) {
         return 0;
@@ -2019,7 +2107,13 @@ static fmt_Int_Pair fmt__distribute_padding(int amount, fmt_Alignment align) {
     return result;
 }
 
-static int fmt__write_grouped(fmt_Writer *writer, const char *buf, int len, char32_t groupchar, int interval) {
+static int fmt__write_grouped(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int len,
+    char32_t groupchar,
+    int interval
+) {
     char grouputf8[4];
     const int grouplen = fmt__utf8_encode(groupchar, grouputf8);
     const int offset = len % interval;
@@ -2305,7 +2399,9 @@ static int fmt__write_float_fraction_digits(
     return written;
 }
 
-static void fmt__get_base_and_exponent(double f, double *base, int *exponent) {
+static void fmt__get_base_and_exponent(
+    double f, double *restrict base, int *restrict exponent
+) {
     // The iterative version is faster (only tested on 1 machine) but is bound
     // by the value of `d` so for large values we need to fall back to the math
     // solution.
@@ -2345,7 +2441,12 @@ static double fmt__pow10(int exp) {
 // Printing functions
 ////////////////////////////////////////////////////////////////////////////////
 
-static int fmt__print_utf8(fmt_Writer *writer, fmt_Format_Specifier *fs, const char *string, int len) {
+static int fmt__print_utf8(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const char *restrict string,
+    int len
+) {
     const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(string, len, fs->precision);
 
     int to_print = width_and_length.second;
@@ -2363,7 +2464,12 @@ static int fmt__print_utf8(fmt_Writer *writer, fmt_Format_Specifier *fs, const c
     return written;
 }
 
-static int fmt__print_utf16(fmt_Writer *writer, fmt_Format_Specifier *fs, const char16_t *string, int len) {
+static int fmt__print_utf16(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const char16_t *restrict string,
+    int len
+) {
     const fmt_Int_Pair width_and_length = fmt__utf16_width_and_length(string, len, fs->precision);
 
     int to_print = width_and_length.second;
@@ -2381,7 +2487,12 @@ static int fmt__print_utf16(fmt_Writer *writer, fmt_Format_Specifier *fs, const 
     return written;
 }
 
-static int fmt__print_utf32(fmt_Writer *writer, fmt_Format_Specifier *fs, const char32_t *string, int len) {
+static int fmt__print_utf32(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const char32_t *restrict string,
+    int len
+) {
     const int width = fmt__utf32_width(string, len);
 
     int to_print = len;
@@ -2399,14 +2510,21 @@ static int fmt__print_utf32(fmt_Writer *writer, fmt_Format_Specifier *fs, const 
     return written;
 }
 
-static int fmt__print_char(fmt_Writer *writer, fmt_Format_Specifier *fs, char32_t ch) {
+static int fmt__print_char(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, char32_t ch
+) {
     char buf[4];
     const int len = fmt__utf8_encode(ch, buf);
     fs->precision = -1;
     return fmt__print_utf8(writer, fs, buf, len);
 }
 
-static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned long long i, char sign) {
+static int fmt__print_int(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    unsigned long long i,
+    char sign
+) {
     const fmt_Base *base = fmt__get_base(fs->type);
     const int digits_width = fmt__unsigned_width(i, base->base);
     if (!sign) {
@@ -2448,7 +2566,9 @@ static int fmt__print_int(fmt_Writer *writer, fmt_Format_Specifier *fs, unsigned
     return written;
 }
 
-static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b) {
+static int fmt__print_bool(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, bool b
+) {
     static const char *STRINGS[] = {"false", "true", "no", "yes"};
     static const int LEN[] = {5, 4, 2, 3};
     const int index = ((int)fs->alternate_form << 1) | (int)b;
@@ -2484,7 +2604,10 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
     } while(0)
 
 static int fmt__print_float_decimal(
-    fmt_Writer *writer, fmt_Format_Specifier *fs, double f, char suffix
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    double f,
+    char suffix
 ) {
     FMT__FLOAT_SPECIAL_CASES();
     char sign = 0;
@@ -2520,8 +2643,11 @@ static int fmt__print_float_decimal(
     const char32_t groupchar = fs->group;
     const int group_interval = fs->group ? 3 : 0;
 
-    const int total_width = !!sign + integer_width + !no_fraction * (1 + fraction_width) + !!suffix;
-    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
+    const int total_width = (!!sign + integer_width
+                             + !no_fraction * (1 + fraction_width) + !!suffix);
+    const fmt_Int_Pair pad = fmt__distribute_padding(
+        fs->width - total_width, fs->align
+    );
 
     int written = 0;
     if (fs->align != fmt_ALIGN_AFTER_SIGN) {
@@ -2533,7 +2659,9 @@ static int fmt__print_float_decimal(
     if (fs->align == fmt_ALIGN_AFTER_SIGN) {
         written += fmt__pad(writer, pad.first, fs->fill);
     }
-    written += fmt__write_float_integer_digits(writer, f, integer_width, groupchar, group_interval);
+    written += fmt__write_float_integer_digits(
+        writer, f, integer_width, groupchar, group_interval
+    );
     if (!no_fraction) {
         double unused, fraction = modf(f, &unused);
 #ifdef FMT_NO_LANGINFO
@@ -2554,7 +2682,9 @@ static int fmt__print_float_decimal(
                 written += fmt__write_digits_10(writer, as_int, fraction_width);
             }
         } else {
-            written += fmt__write_float_fraction_digits(writer, fraction, fraction_width);
+            written += fmt__write_float_fraction_digits(
+                writer, fraction, fraction_width
+            );
         }
     }
     if (suffix) {
@@ -2565,7 +2695,7 @@ static int fmt__print_float_decimal(
 }
 
 static int fmt__print_float_exponential(
-    fmt_Writer *writer, fmt_Format_Specifier *fs, double f
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
     int exp;
@@ -2585,7 +2715,7 @@ static int fmt__print_float_exponential(
 }
 
 static int fmt__print_float_dynamic(
-    fmt_Writer *writer, fmt_Format_Specifier *fs, double f
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
     int exp;
@@ -2607,23 +2737,27 @@ static int fmt__print_float_dynamic(
 
 #undef FMT__FLOAT_SPECIAL_CASES
 
-static int fmt__print_pointer(fmt_Writer *writer, fmt_Format_Specifier *fs, const void *ptr) {
+static int fmt__print_pointer(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const void *ptr
+) {
     fs->type = fs->type == 'P' ? 'X' : 'x';
     return fmt__print_int(writer, fs, (uintptr_t)ptr, 0);
 }
 
 static int fmt__write_time_sized(
-    fmt_Writer *writer,
-    const char *format,
+    fmt_Writer *restrict writer,
+    const char *restrict format,
     size_t format_size,
     const struct tm *datetime
 );
 
 static int fmt__print_time(
-    fmt_Writer *writer,
-    fmt_Format_Specifier *fs,
-    const struct tm *datetime,
-    const char *format,
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const struct tm *restrict datetime,
+    const char *restrict format,
     size_t format_length
 ) {
     fmt_Metric_Writer metric = {
@@ -2670,7 +2804,9 @@ static int fmt__print_time(
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifndef FMT_NO_LANGINFO
-void fmt_translate_strftime(const char *strftime, char *translated, int size) {
+void fmt_translate_strftime(
+    const char *restrict strftime, char *restrict translated, int size
+) {
     for (; *strftime; ++strftime) {
         switch (*strftime) {
         case '%':
@@ -2723,7 +2859,9 @@ static const char * fmt__timezone_name(const struct tm *datetime) {
 #endif
 }
 
-static void fmt__get_timezone_offset(const struct tm *datetime, char buf[5]) {
+static void fmt__get_timezone_offset(
+    const struct tm *restrict datetime, char buf[5]
+) {
 #ifdef _MSC_VER
     fmt_panic("todo");
 #else
@@ -2748,7 +2886,10 @@ static void fmt__get_timezone_offset(const struct tm *datetime, char buf[5]) {
 /// otherwise we'd need to jump over the declaration of the writer as we can't
 /// declare it on top and set the member as most of the are `const`.
 static int fmt__write_grouped_time(
-    char *buf, size_t size, const char *format, const struct tm *datetime
+    char *restrict buf,
+    size_t size,
+    const char *restrict format,
+    const struct tm *restrict datetime
 ) {
     fmt_String_Writer group_writer = {
         .base = fmt_STRING_WRITER_FUNCTIONS,
@@ -2764,10 +2905,10 @@ static int fmt__write_grouped_time(
 }
 
 static int fmt__print_time_specifier(
-    fmt_Writer *writer,
-    const char **format_specifier,
+    fmt_Writer *restrict writer,
+    const char **restrict format_specifier,
     int specifier_number,
-    const struct tm *datetime
+    const struct tm *restrict datetime
 ) {
 #ifdef FMT_NO_LANGINFO
     static const char *LONG_DAYS[]
@@ -2914,10 +3055,10 @@ t_string:
 // Equivalent to `fmt_write_time` but the format has an explicit size and does
 // not need to be null-terminated.
 static int fmt__write_time_sized(
-    fmt_Writer *writer,
-    const char *format,
+    fmt_Writer *restrict writer,
+    const char *restrict format,
     size_t format_size,
-    const struct tm *datetime
+    const struct tm *restrict datetime
 ) {
     int written = 0;
     const char *open_bracket = format;
@@ -2967,9 +3108,9 @@ void fmt_init_threading() {}
 #endif
 
 static int fmt__print_specifier(
-    fmt_Writer *writer,
-    const char **format_specifier,
-    int *arg_count,
+    fmt_Writer *restrict writer,
+    const char **restrict format_specifier,
+    int *restrict arg_count,
     int specifier_number,
     va_list ap
 ) {
@@ -3171,7 +3312,12 @@ t_fmt_string:
     );
 }
 
-int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list ap) {
+int fmt_va_write(
+    fmt_Writer *restrict writer,
+    const char *restrict format,
+    int arg_count,
+    va_list ap
+) {
     int written = 0;
     const char *open_bracket = format;
     int specifier_number = 1;
@@ -3197,7 +3343,9 @@ int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list 
     return written;
 }
 
-int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...) {
+int fmt__write(
+    fmt_Writer *restrict writer, const char *restrict format, int arg_count, ...
+) {
     va_list ap;
     va_start(ap, arg_count);
     const int written = fmt_va_write(writer, format, arg_count, ap);
@@ -3205,7 +3353,13 @@ int fmt__write(fmt_Writer *writer, const char *format, int arg_count, ...) {
     return written;
 }
 
-int fmt__std_print(FILE *stream, const char *format, bool newline, int arg_count, ...) {
+int fmt__std_print(
+    FILE *restrict stream,
+    const char *restrict format,
+    bool newline,
+    int arg_count,
+    ...
+) {
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_lock(&fmt__print_mutex);
 #endif
@@ -3261,7 +3415,13 @@ static void fmt__panic_loc(fmt_Writer *writer, ...) {
     va_end(ap);
 }
 
-void fmt__panic(const char *file, int line, const char *format, int arg_count, ...) {
+void fmt__panic(
+    const char *restrict file,
+    int line,
+    const char *restrict format,
+    int arg_count,
+    ...
+) {
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_lock(&fmt__print_mutex);
 #endif
@@ -3285,7 +3445,13 @@ void fmt__panic(const char *file, int line, const char *format, int arg_count, .
     abort();
 }
 
-int fmt_va_sprint(char *string, size_t size, const char *format, int arg_count, va_list ap) {
+int fmt_va_sprint(
+    char *restrict string,
+    size_t size,
+    const char *restrict format,
+    int arg_count,
+    va_list ap
+) {
     fmt_String_Writer writer = (fmt_String_Writer) {
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = string,
@@ -3297,7 +3463,13 @@ int fmt_va_sprint(char *string, size_t size, const char *format, int arg_count, 
     return written;
 }
 
-int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ...) {
+int fmt__sprint(
+    char *restrict string,
+    size_t size,
+    const char *restrict format,
+    int arg_count,
+    ...
+) {
     va_list ap;
     va_start(ap, arg_count);
     const int written = fmt_va_sprint(string, size, format, arg_count, ap);
@@ -3305,7 +3477,12 @@ int fmt__sprint(char *string, size_t size, const char *format, int arg_count, ..
     return written;
 }
 
-int fmt_va_fprint(FILE *stream, const char *format, int arg_count, va_list ap) {
+int fmt_va_fprint(
+    FILE *restrict stream,
+    const char *restrict format,
+    int arg_count,
+    va_list ap
+) {
     fmt_Stream_Writer swriter = {
         .base = fmt_STREAM_WRITER_FUNCTIONS,
         .stream = stream,
@@ -3315,7 +3492,9 @@ int fmt_va_fprint(FILE *stream, const char *format, int arg_count, va_list ap) {
     return written;
 }
 
-int fmt__fprint(FILE *stream, const char *format, int arg_count, ...) {
+int fmt__fprint(
+    FILE *restrict stream, const char *restrict format, int arg_count, ...
+) {
     va_list ap;
     va_start(ap, arg_count);
     const int written = fmt_va_fprint(stream, format, arg_count, ap);
@@ -3323,7 +3502,11 @@ int fmt__fprint(FILE *stream, const char *format, int arg_count, ...) {
     return written;
 }
 
-int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *datetime) {
+int fmt_write_time(
+    fmt_Writer *restrict writer,
+    const char *restrict format,
+    const struct tm *restrict datetime
+) {
     int written = 0;
     const char *open_bracket = format;
     int specifier_number = 1;
@@ -3346,7 +3529,12 @@ int fmt_write_time(fmt_Writer *writer, const char *format, const struct tm *date
     return written;
 }
 
-int fmt_format_time_to(char *buf, size_t size, const char *format, const struct tm *datetime) {
+int fmt_format_time_to(
+    char *restrict buf,
+    size_t size,
+    const char *restrict format,
+    const struct tm *restrict datetime
+) {
     fmt_String_Writer writer = {
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = buf,
@@ -3358,7 +3546,9 @@ int fmt_format_time_to(char *buf, size_t size, const char *format, const struct 
     return written;
 }
 
-fmt_String fmt_format_time(const char *format, const struct tm *datetime) {
+fmt_String fmt_format_time(
+    const char *restrict format, const struct tm *restrict datetime
+) {
     enum { INIT_CAP = 16 };
     fmt_Allocating_String_Writer writer = (fmt_Allocating_String_Writer) {
         .base = fmt_ALLOC_WRITER_FUNCTIONS,
@@ -3374,6 +3564,11 @@ fmt_String fmt_format_time(const char *format, const struct tm *datetime) {
 }
 
 #endif /* FMT_IMPLEMENTATION */
+
+#ifdef FMT__MY_RESTRICT
+#  undef FMT__MY_RESTRICT
+#  undef restrict
+#endif
 
 /*
 ------------------------------------------------------------------------------
