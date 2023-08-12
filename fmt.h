@@ -42,22 +42,6 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_DEFAULT_TIME_FORMAT "{a} {b} {d:0} {H}:{M}:{S} {Y}"
 #endif
 
-#ifndef FMT_LOWER_INF
-#  define FMT_LOWER_INF "inf"
-#endif
-
-#ifndef FMT_UPPER_INF
-#  define FMT_UPPER_INF "INF"
-#endif
-
-#ifndef FMT_LOWER_NAN
-#  define FMT_LOWER_NAN "nan"
-#endif
-
-#ifndef FMT_UPPER_NAN
-#  define FMT_UPPER_NAN "NAN"
-#endif
-
 // Detecting empty integer macro: https://stackoverflow.com/a/48540034
 #if defined(FMT_DEFAULT_FLOAT_PRECISION) \
     && ((0 - FMT_DEFAULT_FLOAT_PRECISION - 1) == 1 \
@@ -351,6 +335,8 @@ typedef struct {
     fmt_String string;
 } fmt_Allocating_String_Writer;
 
+/// Writer that discards the data written but keeps track of the number of
+/// bytes, number of codepoints, and display width of the data.
 typedef struct {
     const fmt_Writer base;
     size_t bytes;
@@ -358,6 +344,7 @@ typedef struct {
     size_t width;
 } fmt_Metric_Writer;
 
+/// Wraps another writer and only writes up to a limited number of codepoints.
 typedef struct {
     const fmt_Writer base;
     fmt_Writer *inner;
@@ -387,31 +374,31 @@ int fmt__write_limited_str (fmt_Writer *p_self, const char *str);
 static const fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_stream_byte,
     .write_data = fmt__write_stream_data,
-    .write_str = fmt__write_stream_str,
+    .write_str  = fmt__write_stream_str,
 };
 
 static const fmt_Writer fmt_STRING_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_string_byte,
     .write_data = fmt__write_string_data,
-    .write_str = fmt__write_string_str,
+    .write_str  = fmt__write_string_str,
 };
 
 static const fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_alloc_byte,
     .write_data = fmt__write_alloc_data,
-    .write_str = fmt__write_alloc_str,
+    .write_str  = fmt__write_alloc_str,
 };
 
 static const fmt_Writer fmt_METRIC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_metric_byte,
     .write_data = fmt__write_metric_data,
-    .write_str = fmt__write_metric_str,
+    .write_str  = fmt__write_metric_str,
 };
 
 static const fmt_Writer fmt_LIMITED_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_limited_byte,
     .write_data = fmt__write_limited_data,
-    .write_str = fmt__write_limited_str,
+    .write_str  = fmt__write_limited_str,
 };
 
 // Note: these macros don't work in C++ because you can't take the address of
@@ -2468,28 +2455,32 @@ static int fmt__print_bool(fmt_Writer *writer, fmt_Format_Specifier *fs, bool b)
     return fmt__print_utf8(writer, fs, STRINGS[index], LEN[index]);
 }
 
-#define FMT__FLOAT_SPECIAL_CASES()                                                         \
-    do {                                                                                   \
-        if (isinf(f)) {                                                                    \
-            const char *const s = isupper(fs->type) ? "" FMT_UPPER_INF : "" FMT_LOWER_INF; \
-            int written = 0;                                                               \
-            if (signbit(f)) {                                                              \
-                written += writer->write_byte(writer, '-');                                \
-            }                                                                              \
-            fs->precision = -1;                                                            \
-            written += fmt__print_utf8(writer, fs, s, strlen(s));                          \
-            return written;                                                                \
-        }                                                                                  \
-        if (isnan(f)) {                                                                    \
-            const char *const s = isupper(fs->type) ? "" FMT_UPPER_NAN : "" FMT_LOWER_NAN; \
-            int written = 0;                                                               \
-            if (signbit(f)) {                                                              \
-                written += writer->write_byte(writer, '-');                                \
-            }                                                                              \
-            fs->precision = -1;                                                            \
-            written += fmt__print_utf8(writer, fs, s, strlen(s));                          \
-            return written;                                                                \
-        }                                                                                  \
+#define FMT__FLOAT_SPECIAL_CASES()                      \
+    do {                                                \
+        char str[5] = {0};                              \
+        char *p = str + 1;                              \
+        if (isinf(f)) {                                 \
+            if (isupper(fs->type)) {                    \
+                memcpy(p, "INF", 3);                    \
+            } else {                                    \
+                memcpy(p, "inf", 3);                    \
+            }                                           \
+        } else if (isnan(f)) {                          \
+            if (isupper(fs->type)) {                    \
+                memcpy(p, "NAN", 3);                    \
+            } else {                                    \
+                memcpy(p, "nan", 3);                    \
+            }                                           \
+        }                                               \
+        if (*p) {                                       \
+            int len = 3;                                \
+            if (signbit(f)) {                           \
+                *--p = '-';                             \
+                ++len;                                  \
+            }                                           \
+            fs->precision = -1;                         \
+            return fmt__print_utf8(writer, fs, p, len); \
+        }                                               \
     } while(0)
 
 static int fmt__print_float_decimal(

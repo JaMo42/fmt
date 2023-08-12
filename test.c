@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -275,6 +277,7 @@ static bool expect_panic_impl(
             memmove(buf + i, buf + i + 1, n - i);
         }
     }
+    // skip "file:line: "
     char *start = strchr(strchr(buf, ':') + 1, ':') + 2;
     if (memcmp(start, message, strlen(message))) {
         fmt_eprintln(
@@ -462,6 +465,7 @@ su_module_d(internal_functions, "internal functions", {
         su__status = time_format_specifier_parsing_tests();
     })
 
+#ifndef __cplusplus
     su_test("strftime format string translation", {
         enum { COUNT = 3};
         const char **sources = ((const char*[COUNT]){
@@ -483,6 +487,7 @@ su_module_d(internal_functions, "internal functions", {
             }
         }
     })
+#endif
 })
 
 su_module_d(basic_printing, "basic printing", {
@@ -539,15 +544,15 @@ su_module_d(basic_printing, "basic printing", {
         expect("3.1410000000000000142108547152020037174224853515625", "{}", 3.141);
         expect("0.0123456789", "{:.10}", 0.0123456789);
         expect("-3.141", "{:.3}", -3.141);
-        expect(FMT_LOWER_INF, "{}", INFINITY);
-        expect(FMT_UPPER_INF, "{F}", INFINITY);
-        expect(FMT_LOWER_NAN, "{}", NAN);
-        expect(FMT_UPPER_NAN, "{F}", NAN);
-        expect("-" FMT_LOWER_INF, "{}", -INFINITY);
-        expect("-" FMT_UPPER_INF, "{F}", -INFINITY);
-        expect("-" FMT_LOWER_NAN, "{}", -NAN);
-        expect("-" FMT_UPPER_NAN, "{F}", -NAN);
-        expect(FMT_LOWER_INF, "{}", HUGE_VAL);
+        expect("inf", "{}", INFINITY);
+        expect("INF", "{F}", INFINITY);
+        expect("nan", "{}", NAN);
+        expect("NAN", "{F}", NAN);
+        expect("-inf", "{}", -INFINITY);
+        expect("-INF", "{F}", -INFINITY);
+        expect("-nan", "{}", -NAN);
+        expect("-NAN", "{F}", -NAN);
+        expect("inf", "{}", HUGE_VAL);
         expect("1.0e+00", "{e}", 1.0);
         expect("1.0e+03", "{e}", 1000.0);
         expect("1.0e-02", "{e}", 0.01);
@@ -615,7 +620,7 @@ su_module(formatting, {
         expect("3.141000", "{:.6}", 3.141);
         expect("3", "{:.0}", 3.141);
         expect("1.2e+03", "{e:.1}", 1234.0);
-        expect(FMT_LOWER_INF, "{:.1}", INFINITY);
+        expect("inf", "{:.1}", INFINITY);
         expect("java", "{:.4}", "javascript");
         expect("안녕", "{:.2}", "안녕하세요");
         // Booleans are treated as strings
@@ -656,6 +661,8 @@ su_module(formatting, {
         expect("äääabc", "{:ä>6}", "abc");
         expect("äääabc", "{:{}>6}", "abc", u'ä');
         expect("  1.234", "{:>7.}", 1234);
+        expect("  inf  ", "{:^7}", INFINITY);
+        expect("  -inf  ", "{:^8}", -INFINITY);
 #ifndef FMT_FAST_DISPLAY_WIDTH
         expect(" ã ", "{:^3}", "a\u0303");
 #else
