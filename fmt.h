@@ -196,7 +196,7 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
     "float",
     "double",
     "bool",
-    "char *",
+    "char *", // shared with `char8_t *`
     "char16_t *",
     "char32_t *",
     "void *",
@@ -243,6 +243,8 @@ FMT_TYPE_ID(double, fmt__TYPE_DOUBLE);
 FMT_TYPE_ID(bool, fmt__TYPE_BOOL);
 FMT_TYPE_ID(char *, fmt__TYPE_STRING);
 FMT_TYPE_ID(const char *, fmt__TYPE_STRING);
+FMT_TYPE_ID(fmt_char8_t *, fmt__TYPE_STRING);
+FMT_TYPE_ID(const fmt_char8_t *, fmt__TYPE_STRING);
 FMT_TYPE_ID(const char16_t *, fmt__TYPE_STRING_16);
 FMT_TYPE_ID(char16_t *, fmt__TYPE_STRING_16);
 FMT_TYPE_ID(const char32_t *, fmt__TYPE_STRING_32);
@@ -278,6 +280,8 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         bool: fmt__TYPE_BOOL, \
         char *: fmt__TYPE_STRING, \
         const char *: fmt__TYPE_STRING, \
+        fmt_char8_t *: fmt__TYPE_STRING, \
+        const fmt_char8_t *: fmt__TYPE_STRING, \
         const char16_t *: fmt__TYPE_STRING_16, \
         char16_t *: fmt__TYPE_STRING_16, \
         const char32_t *: fmt__TYPE_STRING_32, \
@@ -536,8 +540,8 @@ extern int fmt_write_time(
     const struct tm *restrict datetime
 );
 
-/// Like `fmt_write_time` with a string writer, but unlike `fmt_write_time` this will
-/// also add null terminator.
+/// Like `fmt_write_time` with a string writer, but unlike `fmt_write_time` this
+/// will also add a null terminator.
 extern int fmt_format_time_to(
     char *restrict buf,
     size_t size,
@@ -775,6 +779,10 @@ extern void fmt_translate_strftime(
     )
 
 #endif /* FMT_H */
+
+
+
+
 
 #ifdef FMT_IMPLEMENTATION
 
@@ -2831,11 +2839,12 @@ void fmt_translate_strftime(
             size -= 2;
             break;
 
-        case '}':
-            *translated++ = '}';
-            *translated++ = '}';
-            size -= 2;
-            break;
+        // Closing curly braces are not currently escaped
+        //case '}':
+        //    *translated++ = '}';
+        //    *translated++ = '}';
+        //    size -= 2;
+        //    break;
 
         default:
             *translated++ = *strftime;
