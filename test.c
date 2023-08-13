@@ -839,11 +839,14 @@ su_module(panics, {
 })
 
 int main() {
-    su_run_module(internal_functions);
-    su_run_module(basic_printing);
-    su_run_module(formatting);
-    su_run_module(datetime);
+    SUResult total = su_new_result();
+    su_add_result(&total, su_run_module(internal_functions));
+    su_add_result(&total, su_run_module(basic_printing));
+    su_add_result(&total, su_run_module(formatting));
+    su_add_result(&total, su_run_module(datetime));
     // This is slow so I leave it disabled during development and only enable it
     // after finishing something new.
-    //su_run_module(panics);
+    //su_add_result(&total, su_run_module(panics));
+    puts("Total:");
+    su_print_result(&total);
 }
