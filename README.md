@@ -25,17 +25,21 @@ int main(void) {
 
 ## Requirements
 
-### Intended
+### General
 
 - C11 or newer
 
-### Due to current implementation limitations
-
-- Linux
+### Linux
 
 - `_DEFAULT_SOURCE` to be defined
 
 - compile with `-lm` (I don't think I can get rid of this)
+
+### Windows
+
+Windows builds only work with clang (gcc not tested), as Microsoft has moved on to C++ and `msvc` is lacking a lot of the newer standard C features.
+
+Unlike on linux no directives need to be defined or libraries linked.
 
 ---
 
@@ -110,6 +114,10 @@ There are few differences compared to usual implementations to note here:
     - it will only use the thousands separators from the current locale if it's set to `,` or `.`.
 
 - `{` and `}` for the `fill` and `group` fields do not need to be escaped
+
+- The field width takes display width into account (i.e. `가` is 2 width, `a` is 1 wide)
+
+- The precision field for strings specifies the number of Unicode codepoints.
 
 ### Embedded time formats
 
