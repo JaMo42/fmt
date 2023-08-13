@@ -21,6 +21,11 @@
 #    undef FMT_LOCKED_DEFAULT_PRINTERS
 #    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not implemented on this platform"
 #  endif
+#else
+#  if __STDC_VERSION__ <= 201710L
+//   This is usually provided by <threads.h>
+#    define thread_local _Thread_local
+#  endif
 #endif
 #include <uchar.h>
 #include <math.h>
@@ -391,7 +396,7 @@ typedef struct {
 
 FMT__STATIC_ASSERT(
     sizeof(fmt_String) == sizeof(char *) + 2 * sizeof(size_t),
-    "fmt_String too large"
+    "fmt_String is too large"
 );
 
 typedef struct {
