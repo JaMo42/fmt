@@ -1249,8 +1249,9 @@ static int fmt__ascii_display_width(char ch_) {
     return !(ch < 32 || (ch >= 0x7f && ch < 0xa0));
 }
 
+#ifdef FMT_FAST_DISPLAY_WIDTH
 /// Returns the display width of a non-zero-width character.
-static int fmt__fast_display_width(char32_t ucs) {
+static int fmt__display_width(char32_t ucs) {
     /* test for 8-bit control characters */
     if (ucs < 32 || (ucs >= 0x7f && ucs < 0xa0))
         return 0;
@@ -1269,9 +1270,6 @@ static int fmt__fast_display_width(char32_t ucs) {
       (ucs >= 0x20000 && ucs <= 0x2fffd) ||
       (ucs >= 0x30000 && ucs <= 0x3fffd)));
 }
-
-#ifdef FMT_FAST_DISPLAY_WIDTH
-#  define fmt__display_width fmt__fast_display_width
 #else
 #  define fmt__display_width fmt__mk_wcwidth
 #endif
@@ -2376,6 +2374,24 @@ static int fmt__float_fraction_width(double f) {
     return width;
 }
 
+/// Mostly equivalent to `fmt__write_digits_10` but also handles leading zeros,
+/// and does not handle `n` being `0`.
+static int fmt__write_float_integer_digits_as_integer(
+    fmt_Writer *writer, unsigned long long n, int len
+) {
+    char buf[20];
+    memset(buf, '0', len);
+    char *p = buf + len - 2;
+    int idx;
+    while (n) {
+        idx = (n % 100) * 2;
+        memcpy(p, fmt__DECIMAL_DIGIT_PAIRS + idx, 2);
+        p -= 2;
+        n /= 100;
+    }
+    return writer->write_data(writer, buf, len);
+}
+
 static int fmt__write_float_integer_digits(
     fmt_Writer *writer,
     double f,
@@ -2717,7 +2733,9 @@ typedef struct {
                 }; \
                 written += _writer->write_data(_writer, zeros, _state.fraction_width); \
             } else { \
-                written += fmt__write_digits_10(_writer, as_int, _state.fraction_width); \
+                written += fmt__write_float_integer_digits_as_integer( \
+                    _writer, as_int, _state.fraction_width \
+                ); \
             } \
         } else { \
             written += fmt__write_float_fraction_digits( \
@@ -2832,44 +2850,36 @@ static int fmt__print_cash_money(
     const char *symstr = "-$";
 #else
     const char *symstr = nl_langinfo(CRNCYSTR);
-#endif
-    char sign = 0;
-    if (f < 0.0) {
-        sign = '-';
-        f = -f;
-    } else if (fs->sign == fmt_SIGN_ALWAYS) {
-        sign = '+';
-    } else if (fs->sign == fmt_SIGN_SPACE) {
-        sign = ' ';
+    if (!symstr[1]) {
+        symstr = "-$";
     }
+#endif
 
-    const char32_t groupchar = fs->group;
-    const int group_interval = fs->group ? 3 : 0;
-
-    const int integer_width = fmt__float_integer_width(f);
+    if (fs->precision < 0) {
+        fs->precision = 2;
+    }
     const int currency_width = fmt__utf8_width_and_length(symstr + 1, -1, -1).first;
-    const int total_width = integer_width + (symstr[0] != '.') + 2 + currency_width;
-
-    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
+    fmt__Print_Float_State state;
+    FMT__WRITE_FLOAT_INIT(state, fs, f, currency_width - (symstr[0] == '.'));
 
     int written = 0;
     if (fs->align != fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, pad.first, fs->fill);
+        written += fmt__pad(writer, state.padding.first, fs->fill);
     }
-    // not sure how to deal with padding, I guess grouping the currency symbol
-    // with the sign makes most sense.
+    // Shopify's Polaris design guidelines say: "Always place the negative
+    // symbol before the currency and amount in either format".
+    // (https://polaris.shopify.com/foundations/formatting-localized-currency)
+    if (state.sign) {
+        written += writer->write_byte(writer, state.sign);
+    }
+    // Not sure if this padding should be before or after the currency symbol
+    if (fs->align == fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, state.padding.first, fs->fill);
+    }
     if (symstr[0] == '-') {
         written += writer->write_str(writer, symstr + 1);
     }
-    if (sign) {
-        written += writer->write_byte(writer, sign);
-    }
-    if (fs->align == fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, pad.first, fs->fill);
-    }
-    written += fmt__write_float_integer_digits(
-        writer, f, integer_width, groupchar, group_interval
-    );
+    FMT__WRITE_FLOAT_INTEGER(writer, state, fs, f);
     if (symstr[0] == '.') {
         written += writer->write_str(writer, symstr + 1);
     } else {
@@ -2879,16 +2889,19 @@ static int fmt__print_cash_money(
         written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
 #endif
     }
-    double unused;
-    const int decimal = (int)round(modf(f, &unused) * 100.0);
-    writer->write_data(writer, fmt__DECIMAL_DIGIT_PAIRS + decimal * 2, 2);
+    if (!state.no_fraction) {
+        FMT__WRITE_FLOAT_FRACTION(writer, state, fs, f);
+    }
     if (symstr[0] == '+') {
         written += writer->write_str(writer, symstr + 1);
     }
-    written += fmt__pad(writer, pad.second, fs->fill);
+    written += fmt__pad(writer, state.padding.second, fs->fill);
     return written;
 }
 
+#undef FMT__WRITE_FLOAT_FRACTION
+#undef FMT__WRITE_FLOAT_INTEGER
+#undef FMT__WRITE_FLOAT_INIT
 #undef FMT__FLOAT_SPECIAL_CASES
 
 static int fmt__print_pointer(
@@ -3433,7 +3446,11 @@ t_unsigned:
         return fmt__print_char(writer, &fs, value.v_unsigned);
 
     case '$':
-        return fmt__print_cash_money(writer, &fs, (double)value.v_unsigned);
+        if (sign) {
+            return fmt__print_cash_money(writer, &fs, -(double)value.v_unsigned);
+        } else {
+            return fmt__print_cash_money(writer, &fs, (double)value.v_unsigned);
+        }
 
     default:
         return fmt__print_int(writer, &fs, value.v_unsigned, sign);

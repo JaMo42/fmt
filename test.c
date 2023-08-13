@@ -540,6 +540,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("1777777777777777777777", "{o}", 18446744073709551615ULL);
         expect("ffffffffffffffff", "{x}", 18446744073709551615ULL);
         expect("FFFFFFFFFFFFFFFF", "{X}", 18446744073709551615ULL);
+        expect("$12.00", "{$}", 12);
+        expect("-$10.00", "{$}", -10);
     })
 
     su_test("floats", {
@@ -568,6 +570,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("31415.9", "{g}", 31415.9265359);
         expect("3.14159e+06", "{g}", 3141592.65359);
         expect("3.14159e+08", "{g}", 314159265.359);
+        expect("$3.14", "{$}", 3.141);
+        expect("-$1.00", "{$}", -1.0);
     })
 
     su_test("pointers", {
@@ -618,7 +622,13 @@ su_module(formatting, {
         expect("-   123", "{:=7}", -123);
         expect("  true  ", "{:^8}", (bool)true);
         expect("  2.0  ", "{:^7}", 2.0);
+        expect("2.0e+02    ", "{e:<11}", 200.0);
+        expect("    2.0e+02", "{e:>11}", 200.0);
         expect("  2.0e+02  ", "{e:^11}", 200.0);
+        expect("$1.20    ", "{$:<9}", 1.2);
+        expect("    $1.20", "{$:>9}", 1.2);
+        expect("  $1.20  ", "{$:^9}", 1.2);
+        expect("-   $1.20", "{$:=9}", -1.2);
     })
 
     su_test("precision", {
@@ -692,6 +702,8 @@ su_module(formatting, {
         expect(" 123", "{: }", 123);
         expect("+2.0", "{:+}", 2.0);
         expect(" 2.0", "{: }", 2.0);
+        expect("+$1.20", "{$:+}", 1.2);
+        expect(" $1.20", "{$: }", 1.2);
     })
 })
 
