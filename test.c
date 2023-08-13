@@ -148,7 +148,7 @@ static fmt_String expect_spec_get_check_impl(int number, const char *checks) {
     };
 }
 
-/// Get the text for the `number`th check from the varidadic arguments
+/// Get the text for the `number`th check from the variadic arguments
 #define expect_spec_get_check(number, ...) \
     expect_spec_get_check_impl((number), STRINGIFY((__VA_ARGS__)))
 

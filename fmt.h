@@ -631,7 +631,7 @@ extern void fmt_translate_strftime(
 
 /// Prints to the standard output.
 ///
-/// Equivalent to the println! macro except that a newline is not printed at the
+/// Equivalent to the fmt_println macro except that a newline is not printed at the
 /// end of the message.
 ///
 /// Note that stdout is frequently line-buffered by default so it may be
@@ -2907,7 +2907,7 @@ static int fmt__print_cash_money(
 static int fmt__print_pointer(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
-    const void *ptr
+    const void *restrict ptr
 ) {
     fs->type = fs->type == 'P' ? 'X' : 'x';
     return fmt__print_int(writer, fs, (uintptr_t)ptr, 0);
