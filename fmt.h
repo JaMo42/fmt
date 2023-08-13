@@ -17,14 +17,16 @@
 #include <ctype.h>
 #ifndef _WIN32
 #  include <threads.h>
+#  define FMT__THREAD_LOCAL thread_local
 #  ifdef FMT_LOCKED_DEFAULT_PRINTERS
 #    undef FMT_LOCKED_DEFAULT_PRINTERS
 #    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not implemented on this platform"
 #  endif
 #else
 #  if __STDC_VERSION__ <= 201710L
-//   This is usually provided by <threads.h>
-#    define thread_local _Thread_local
+#    define FMT__THREAD_LOCAL _Thread_local
+#  else
+#    define FMT__THREAD_LOCAL thread_local
 #  endif
 #endif
 #include <uchar.h>
@@ -2123,7 +2125,7 @@ static int fmt__pad(fmt_Writer *writer, int n, char32_t ch) {
         return 0;
     }
     enum { BUF_SIZE = 32 };
-    static thread_local char buf[BUF_SIZE];
+    static FMT__THREAD_LOCAL char buf[BUF_SIZE];
     const int amount = n;
     if (ch < 0x80) {
         memset(buf, ch, BUF_SIZE);
@@ -3045,7 +3047,7 @@ void fmt_translate_strftime(
 static const char * fmt__timezone_name(const struct tm *datetime) {
 #ifdef _MSC_VER
     (void)datetime;
-    static thread_local char buf[16];
+    static FMT__THREAD_LOCAL char buf[16];
     size_t unused;
     _get_tzname(&unused, buf, sizeof(buf), 0);
     return buf;
