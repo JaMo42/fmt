@@ -592,6 +592,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("Hello World", "{}", string);
         string.size = 5;
         expect("Hello World", "{} World", string);
+        string = fmt_format("World");
+        expect("Hello World", "Hello {}", string.take);
     })
 
     su_test("escaping", {

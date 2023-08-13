@@ -177,6 +177,7 @@ typedef enum {
     fmt__TYPE_POINTER,
     fmt__TYPE_TIME,
     fmt__TYPE_FMT_STRING,
+    fmt__TYPE_FMT_STRING_TAKE,
     fmt__TYPE_ID_COUNT,
 } fmt_Type_Id;
 
@@ -202,6 +203,7 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
     "void *",
     "struct tm *",
     "fmt_String",
+    "fmt_String",
 };
 
 #ifdef _MSC_VER
@@ -216,10 +218,21 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
 
 // Need to define fmt_String here so we can use it to overload the type id function.
 
-struct fmt_String {
+struct fmt_String_Take {
     char *data;
     size_t capacity;
     size_t size;
+};
+
+struct fmt_String {
+    union {
+        fmt_String_Take take;
+        struct {
+            char *data;
+            size_t capacity;
+            size_t size;
+        };
+    };
 };
 
 #define FMT_TYPE_ID(_T, _id) \
@@ -256,6 +269,7 @@ FMT_TYPE_ID(const void *, fmt__TYPE_POINTER);
 FMT_TYPE_ID(tm *, fmt__TYPE_TIME);
 FMT_TYPE_ID(const tm *, fmt__TYPE_TIME);
 FMT_TYPE_ID(fmt_String, fmt__TYPE_FMT_STRING);
+FMT_TYPE_ID(fmt_String_Take, fmt__TYPE_FMT_STRING_TAKE);
 template<class Else>
 FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
 #undef FMT_TYPE_ID
@@ -293,6 +307,7 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         struct tm *: fmt__TYPE_TIME, \
         const struct tm *: fmt__TYPE_TIME, \
         fmt_String: fmt__TYPE_FMT_STRING, \
+        struct fmt_String_Take: fmt__TYPE_FMT_STRING_TAKE, \
         default: fmt__TYPE_UNKNOWN \
     )
 
@@ -340,9 +355,24 @@ typedef struct {
 
 #ifndef __cplusplus
 typedef struct {
-    char *data;
-    size_t capacity;
-    size_t size;
+    union {
+        // fmt_String_Take must be a full copy of the string structure since
+        // we need to pass it through the variadic arguments.
+
+        /// Proxy type what when passed to a fmt function will cause the `data`
+        /// member to be free'd after printing it.
+        struct fmt_String_Take {
+            char *data;
+            size_t capacity;
+            size_t size;
+        } take;
+
+        struct {
+            char *data;
+            size_t capacity;
+            size_t size;
+        };
+    };
 } fmt_String;
 #endif
 
@@ -3221,6 +3251,7 @@ static int fmt__print_specifier(
             goto t_time;
 
         FMT_TID_CASE(fmt__TYPE_FMT_STRING, v_fmt_string, fmt_String, t_fmt_string)
+        FMT_TID_CASE(fmt__TYPE_FMT_STRING_TAKE, v_fmt_string, fmt_String, t_fmt_string_take)
 
         case fmt__TYPE_UNKNOWN:
             // Unknown is also used for all pointers we don't specify an explicit
@@ -3319,6 +3350,13 @@ t_fmt_string:
     return fmt__print_utf8(
         writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
     );
+
+t_fmt_string_take:
+    const int written = fmt__print_utf8(
+        writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
+    );
+    free(value.v_fmt_string.data);
+    return written;
 }
 
 int fmt_va_write(
