@@ -618,6 +618,7 @@ su_module(formatting, {
         expect("-   123", "{:=7}", -123);
         expect("  true  ", "{:^8}", (bool)true);
         expect("  2.0  ", "{:^7}", 2.0);
+        expect("  2.0e+02  ", "{e:^11}", 200.0);
     })
 
     su_test("precision", {
