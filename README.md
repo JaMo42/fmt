@@ -194,7 +194,17 @@ int fmt_sprint(char *str, size_t size, const char *format, ...);
 int fmt_fprint(FILE *stream, const char *format, ...);
 fmt_String fmt_format(const char *format, ...);
 [[noreturn]] void fmt_panic(const char *format, ...);
+
+[[noreturn]] void fmt_todo();
+[[noreturn]] void fmt_todo(const char *format, ...);
+
+[[noreturn]] void fmt_unimplemented();
+[[noreturn]] void fmt_unimplemented(const char *format, ...);
 ```
+
+`fmt_todo` and `fmt_unimplemented` only take variadic arguments to allow for
+an optional appendix to the default message.  If they do receive arguments the
+first argument must be a string literal.
 
 ### Misc functions
 
@@ -352,4 +362,16 @@ setlocale(LC_ALL, "de_DE.utf8");
 fmt_println("{$:.}", -1000); // "-1.000,00€"
 setlocale(LC_ALL, "ko_KR.utf8");
 fmt_println("{$:.}", -1000); // "-₩1,000.00"
+```
+
+### todo and unimplemented
+
+```c
+fmt_todo(); // "file:line: not yet implemented"
+fmt_todo("message"); // "file:line: not yet implemented: message"
+fmt_todo("format {}", 123); // "file:line: not yet implemented: format 123"
+
+fmt_unimplemented(); // "file:line: not implemented"
+fmt_unimplemented("message"); // "file:line: not implemented: message"
+fmt_unimplemented("format {}", 123); // "file:line: not implemented: format 123"
 ```

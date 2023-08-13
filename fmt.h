@@ -809,6 +809,32 @@ extern void fmt_translate_strftime(
         __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
     )
 
+/// Indicates unimplemented code by panicking with a message of “not implemented”.
+///
+/// Wraps `fmt_panic`.
+///
+/// Examples:
+/// ```c
+/// fmt_todo();
+/// fmt_todo("string");
+/// fmt_todo("format {}", 123);
+/// ```
+#define fmt_todo(...) \
+    fmt_panic("not yet implemented" __VA_OPT__(": ") __VA_ARGS__)
+
+/// Indicates unfinished code.
+///
+/// Wraps `fmt_panic`.
+///
+/// Examples:
+/// ```c
+/// fmt_unimplemented();
+/// fmt_unimplemented("string");
+/// fmt_unimplemented("format {}", 123);
+/// ```
+#define fmt_unimplemented(...) \
+    fmt_panic("not implemented" __VA_OPT__(": ") __VA_ARGS__)
+
 /// Convenience function for writing to a file.
 ///
 /// Unlike the default functions for writing to stdout and stderr this is not
