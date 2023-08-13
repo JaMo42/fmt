@@ -67,7 +67,9 @@ typedef uint_least8_t fmt_char8_t;
 #endif
 
 // _WIN32 may not be the correct check here, only tested with clang 16.0.5 on
-// Windows.
+// Windows.  On that compiler we can't just copy the `va_list`s as that would
+// keep giving us the first argument over and over.  On linux however we can't
+// take the address of a `va_list`.
 #ifdef _WIN32
 typedef va_list *fmt__va_list_ref;
 #define FMT__VA_LIST_REF(ap) &ap
@@ -387,7 +389,10 @@ typedef struct {
 } fmt_String;
 #endif
 
-FMT__STATIC_ASSERT(sizeof(fmt_String) == sizeof(char *) + 2 * sizeof(size_t));
+FMT__STATIC_ASSERT(
+    sizeof(fmt_String) == sizeof(char *) + 2 * sizeof(size_t),
+    "fmt_String too large"
+);
 
 typedef struct {
     const fmt_Writer base;
@@ -2392,11 +2397,14 @@ static int fmt__write_float_integer_digits_as_integer(
     memset(buf, '0', len);
     char *p = buf + len - 2;
     int idx;
-    while (n) {
+    while (n >= 10) {
         idx = (n % 100) * 2;
         memcpy(p, fmt__DECIMAL_DIGIT_PAIRS + idx, 2);
         p -= 2;
         n /= 100;
+    }
+    if (n) {
+        p[1] = '0' + n;
     }
     return writer->write_data(writer, buf, len);
 }
@@ -3518,7 +3526,7 @@ t_fmt_string:
         writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
     );
 
-t_fmt_string_take:
+t_fmt_string_take:;
     const int written = fmt__print_utf8(
         writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
     );
