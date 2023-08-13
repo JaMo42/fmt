@@ -15,7 +15,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <ctype.h>
-#include <threads.h>
+#ifndef _WIN32
+#  include <threads.h>
+#  ifdef FMT_LOCKED_DEFAULT_PRINTERS
+#    undef FMT_LOCKED_DEFAULT_PRINTERS
+#    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not implemented on this platform"
+#  endif
+#endif
 #include <uchar.h>
 #include <math.h>
 #include <time.h>
@@ -28,9 +34,6 @@
 // since we need our typedef anyways we never use `char8_t` since we wouldn't
 // want to use that name for the C11 version.
 typedef uint_least8_t fmt_char8_t;
-
-// TODO: remove
-#include "icecream.h"
 
 #if defined(__cplusplus) || __STDC_VERSION__ > 201710L
 #  define FMT__NORETURN [[noreturn]]
@@ -61,6 +64,18 @@ typedef uint_least8_t fmt_char8_t;
 #if defined(__cplusplus) && !defined(restrict)
 #  define FMT__MY_RESTRICT
 #  define restrict
+#endif
+
+// _WIN32 may not be the correct check here, only tested with clang 16.0.5 on
+// Windows.
+#ifdef _WIN32
+typedef va_list *fmt__va_list_ref;
+#define FMT__VA_LIST_REF(ap) &ap
+#define FMT__VA_LIST_DEREF(ap) *ap
+#else
+typedef va_list fmt__va_list_ref;
+#define FMT__VA_LIST_REF(ap) ap
+#define FMT__VA_LIST_DEREF(ap) ap
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -208,14 +223,6 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
     "fmt_String",
 };
 
-#ifdef _MSC_VER
-#define fmt__TYPE_WSTRING fmt__TYPE_STRING_16
-#define fmt__TYPE_WCHAR fmt__TYPE_UNSIGNED_SHORT
-#else
-#define fmt__TYPE_WSTRING fmt__TYPE_STRING_32
-#define fmt__TYPE_WCHAR fmt__TYPE_UNSIGNED
-#endif
-
 #ifdef __cplusplus
 
 // Need to define fmt_String here so we can use it to overload the type id function.
@@ -302,8 +309,10 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         char16_t *: fmt__TYPE_STRING_16, \
         const char32_t *: fmt__TYPE_STRING_32, \
         char32_t *: fmt__TYPE_STRING_32, \
-        wchar_t *: fmt__TYPE_WSTRING, \
-        const wchar_t *: fmt__TYPE_WSTRING, \
+        /* These match wchar_t strings on linux, on windows they are already
+           matched by char16_t. */ \
+        int *: fmt__TYPE_STRING_32, \
+        const int*: fmt__TYPE_STRING_32, \
         void *: fmt__TYPE_POINTER, \
         const void *: fmt__TYPE_POINTER, \
         struct tm *: fmt__TYPE_TIME, \
@@ -824,8 +833,8 @@ extern void fmt_translate_strftime(
 // Type ID functions
 ////////////////////////////////////////////////////////////////////////////////
 
-static size_t fmt__va_get_unsigned_integer(va_list ap) {
-    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
+static size_t fmt__va_get_unsigned_integer(fmt__va_list_ref ap) {
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(FMT__VA_LIST_DEREF(ap), int);
     switch (type) {
     case fmt__TYPE_SIGNED_CHAR:
     case fmt__TYPE_SHORT:
@@ -833,26 +842,26 @@ static size_t fmt__va_get_unsigned_integer(va_list ap) {
     // these are promoted to int
     case fmt__TYPE_UNSIGNED_CHAR:
     case fmt__TYPE_UNSIGNED_SHORT: {
-        int n = va_arg(ap, int);
+        int n = va_arg(FMT__VA_LIST_DEREF(ap), int);
         if (n < 0) goto negative;
         return n;
     }
     case fmt__TYPE_LONG: {
-        long n = va_arg(ap, long);
+        long n = va_arg(FMT__VA_LIST_DEREF(ap), long);
         if (n < 0) goto negative;
         return n;
     }
     case fmt__TYPE_LONG_LONG: {
-        long long n = va_arg(ap, long long);
+        long long n = va_arg(FMT__VA_LIST_DEREF(ap), long long);
         if (n < 0) goto negative;
         return n;
     }
     case fmt__TYPE_UNSIGNED_LONG: {
-        unsigned long n = va_arg(ap, unsigned long);
+        unsigned long n = va_arg(FMT__VA_LIST_DEREF(ap), unsigned long);
         return n;
     }
     case fmt__TYPE_UNSIGNED_LONG_LONG: {
-        unsigned long long n = va_arg(ap, unsigned long long);
+        unsigned long long n = va_arg(FMT__VA_LIST_DEREF(ap), unsigned long long);
         return n;
     }
     default:
@@ -862,31 +871,31 @@ negative:
     fmt_panic("expected unsigned value");
 }
 
-static char32_t fmt__va_get_character(va_list ap) {
-    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
+static char32_t fmt__va_get_character(fmt__va_list_ref ap) {
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(FMT__VA_LIST_DEREF(ap), int);
     switch (type) {
     case fmt__TYPE_CHAR:
         // char gets promoted to int
-        return va_arg(ap, int);
+        return va_arg(FMT__VA_LIST_DEREF(ap), int);
     case fmt__TYPE_INT:
         // character literals have type `int`, fmt__TYPE_CHAR is only available
         // for `char` variables.
-        return va_arg(ap, int);
+        return va_arg(FMT__VA_LIST_DEREF(ap), int);
     case fmt__TYPE_UNSIGNED_SHORT:
         // promoted to int
-        return va_arg(ap, int);
+        return va_arg(FMT__VA_LIST_DEREF(ap), int);
     case fmt__TYPE_UNSIGNED:
-        return va_arg(ap, unsigned int);
+        return va_arg(FMT__VA_LIST_DEREF(ap), unsigned int);
     default:
         fmt_panic("expected character type");
     }
 }
 
-static const char * fmt__va_get_utf8_string(va_list ap) {
-    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
+static const char * fmt__va_get_utf8_string(fmt__va_list_ref ap) {
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(FMT__VA_LIST_DEREF(ap), int);
     switch (type) {
     case fmt__TYPE_STRING:
-        return va_arg(ap, const char *);
+        return va_arg(FMT__VA_LIST_DEREF(ap), const char *);
     default:
         fmt_panic("expected string");
     }
@@ -1658,7 +1667,7 @@ static const char * fmt__parse_int(
     int *restrict out,
     int specifier_number,
     int *restrict arg_count,
-    va_list ap
+    fmt__va_list_ref ap
 ) {
     if (*format_specifier == '{') {
         ++format_specifier;
@@ -1705,7 +1714,7 @@ static const char * fmt__parse_specifier_after_colon(
     fmt_Format_Specifier *restrict out,
     int specifier_number,
     int *restrict arg_count,
-    va_list ap
+    fmt__va_list_ref ap
 ) {
     int parsed;
     // Alignment
@@ -1809,7 +1818,7 @@ static const char * fmt__parse_specifier(
     fmt_Type_Id type,
     int specifier_number,
     int *restrict arg_count,
-    va_list ap
+    fmt__va_list_ref ap
 ) {
     int parsed;
     fmt__format_specifier_default(out);
@@ -1923,7 +1932,7 @@ static const char * fmt__parse_embedded_time_specifier(
     int *restrict time_string_length_out,
     int specifier_number,
     int *restrict arg_count,
-    va_list ap
+    fmt__va_list_ref ap
 ) {
     fmt__format_specifier_default(out);
     ++format_specifier;  // skip '{'
@@ -2432,7 +2441,7 @@ static int fmt__write_float_fraction_digits(
     double f,
     int length
 ) {
-    char buf [32];
+    char buf[32];
     int pairindex;
     const char *bufend = buf + sizeof(buf);
     char *p = buf;
@@ -2674,74 +2683,78 @@ typedef struct {
     fmt_Int_Pair padding;
 } fmt__Print_Float_State;
 
-#define FMT__WRITE_FLOAT_INIT(_state, _fs, _flt, _width_overhead) \
-    do { \
-        _state.sign = 0; \
-        if (_flt < 0.0) { \
-            _state.sign = '-'; \
-            _flt = -_flt; \
-        } else if (_fs->sign == fmt_SIGN_ALWAYS) { \
-            _state.sign = '+'; \
-        } else if (_fs->sign == fmt_SIGN_SPACE) { \
-            _state.sign = ' '; \
-        } \
-        _state.integer_width = fmt__float_integer_width(_flt); \
-        if (_fs->precision < 0) { \
-            _fs->precision = FMT_DEFAULT_FLOAT_PRECISION; \
-        } \
-        if (_fs->precision == 0) { \
-            _state.no_fraction = true; \
-            _state.fraction_width = 0; \
-        } else { \
-            _state.no_fraction = false; \
-            if (_fs->precision < 0) { \
+#define FMT__WRITE_FLOAT_INIT(_state, _fs, _flt, _width_overhead)        \
+    do {                                                                 \
+        _state.sign = 0;                                                 \
+        if (_flt < 0.0) {                                                \
+            _state.sign = '-';                                           \
+            _flt = -_flt;                                                \
+        } else if (_fs->sign == fmt_SIGN_ALWAYS) {                       \
+            _state.sign = '+';                                           \
+        } else if (_fs->sign == fmt_SIGN_SPACE) {                        \
+            _state.sign = ' ';                                           \
+        }                                                                \
+        _state.integer_width = fmt__float_integer_width(_flt);           \
+        if (_fs->precision < 0) {                                        \
+            _fs->precision = FMT_DEFAULT_FLOAT_PRECISION;                \
+        }                                                                \
+        if (_fs->precision == 0) {                                       \
+            _state.no_fraction = true;                                   \
+            _state.fraction_width = 0;                                   \
+        } else {                                                         \
+            _state.no_fraction = false;                                  \
+            if (_fs->precision < 0) {                                    \
                 _state.fraction_width = fmt__float_fraction_width(_flt); \
-            } else { \
-                _state.fraction_width = _fs->precision; \
-                if (_state.fraction_width < 20) { \
-                    const double p = fmt__pow10(_state.fraction_width); \
-                    _flt = round(_flt * p) / p; \
-                } \
-            } \
-        } \
-        const int total_width = (!!_state.sign + _state.integer_width \
-                                 + (!_state.no_fraction \
-                                    * (1 + _state.fraction_width)) \
-                                 + (_width_overhead)); \
-        _state.padding = fmt__distribute_padding( \
-            _fs->width - total_width, _fs->align \
-        ); \
+            } else {                                                     \
+                _state.fraction_width = _fs->precision;                  \
+                if (_state.fraction_width < 20) {                        \
+                    const double p = fmt__pow10(_state.fraction_width);  \
+                    _flt = round(_flt * p) / p;                          \
+                }                                                        \
+            }                                                            \
+        }                                                                \
+        const int total_width = (!!_state.sign + _state.integer_width    \
+                                 + (!_state.no_fraction                  \
+                                    * (1 + _state.fraction_width))       \
+                                 + (_width_overhead));                   \
+        _state.padding = fmt__distribute_padding(                        \
+            _fs->width - total_width, _fs->align                         \
+        );                                                               \
     } while (0)
 
-#define FMT__WRITE_FLOAT_INTEGER(_writer, _state, _fs, _flt) \
-    do { \
-        written += fmt__write_float_integer_digits( \
+#define FMT__WRITE_FLOAT_INTEGER(_writer, _state, _fs, _flt)                    \
+    do {                                                                        \
+        written += fmt__write_float_integer_digits(                             \
             _writer, _flt, _state.integer_width, _fs->group, _fs->group ? 3 : 0 \
-        ); \
+        );                                                                      \
     } while (0)
 
-#define FMT__WRITE_FLOAT_FRACTION(_writer, _state, _fs, _flt) \
-    do { \
-        double unused, fraction = modf(_flt, &unused); \
-        if (_state.fraction_width < 20) { \
-            const uint64_t as_int = round(fraction * fmt__pow10(_state.fraction_width)); \
-            if (as_int == 0) { \
-                /* fmt__write_digits_10 can't give us multiple zeros */\
-                static const char zeros[19] = { \
-                    '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', \
-                    '0' ,'0', '0', '0', '0', '0', '0', '0', '0' \
-                }; \
-                written += _writer->write_data(_writer, zeros, _state.fraction_width); \
-            } else { \
-                written += fmt__write_float_integer_digits_as_integer( \
-                    _writer, as_int, _state.fraction_width \
-                ); \
-            } \
-        } else { \
-            written += fmt__write_float_fraction_digits( \
-                _writer, fraction, _state.fraction_width \
-            ); \
-        } \
+#define FMT__WRITE_FLOAT_FRACTION(_writer, _state, _fs, _flt)           \
+    do {                                                                \
+        double unused, fraction = modf(_flt, &unused);                  \
+        if (_state.fraction_width < 20) {                               \
+            const uint64_t as_int = round(                              \
+                fraction * fmt__pow10(_state.fraction_width)            \
+            );                                                          \
+            if (as_int == 0) {                                          \
+                /* fmt__write_digits_10 can't give us multiple zeros */ \
+                static const char zeros[19] = {                         \
+                    '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',   \
+                    '0' ,'0', '0', '0', '0', '0', '0', '0', '0'         \
+                };                                                      \
+                written += _writer->write_data(                         \
+                    _writer, zeros, _state.fraction_width               \
+                );                                                      \
+            } else {                                                    \
+                written += fmt__write_float_integer_digits_as_integer(  \
+                    _writer, as_int, _state.fraction_width              \
+                );                                                      \
+            }                                                           \
+        } else {                                                        \
+            written += fmt__write_float_fraction_digits(                \
+                _writer, fraction, _state.fraction_width                \
+            );                                                          \
+        }                                                               \
     } while (0)
 
 static int fmt__print_float_decimal(
@@ -2970,7 +2983,6 @@ static int fmt__print_time(
 // Time
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef FMT_NO_LANGINFO
 void fmt_translate_strftime(
     const char *restrict strftime, char *restrict translated, int size
 ) {
@@ -3016,12 +3028,14 @@ void fmt_translate_strftime(
     }
     *translated = '\0';
 }
-#endif
-
 
 static const char * fmt__timezone_name(const struct tm *datetime) {
 #ifdef _MSC_VER
-    fmt_panic("todo");
+    (void)datetime;
+    static thread_local char buf[16];
+    size_t unused;
+    _get_tzname(&unused, buf, sizeof(buf), 0);
+    return buf;
 #else
     return datetime->tm_zone;
 #endif
@@ -3031,9 +3045,12 @@ static void fmt__get_timezone_offset(
     const struct tm *restrict datetime, char buf[5]
 ) {
 #ifdef _MSC_VER
-    fmt_panic("todo");
+    (void)datetime;
+    long offset;
+    _get_timezone(&offset);
 #else
     long offset = datetime->tm_gmtoff;
+#endif
     if (offset < 0) {
         offset = -offset;
         *buf++ = '-';
@@ -3047,7 +3064,6 @@ static void fmt__get_timezone_offset(
     buf += 2;
     memcpy(buf, fmt__DECIMAL_DIGIT_PAIRS + minutes * 2, 2);
     buf[2] = '\0';
-#endif
 }
 
 /// Used by `fmt__print_time_specifier`, it's a separate function because
@@ -3100,7 +3116,10 @@ static int fmt__print_time_specifier(
 #endif
     } value;
     struct tm my_datetime;
-    char large_buf[128], small_buf[32], *buf_ptr;
+    char large_buf[128], small_buf[32];
+#ifndef FMT_NO_LANGINFO
+    char *buf_ptr;
+#endif
 
     *format_specifier = fmt__parse_time_specifier(
         *format_specifier, &spec, specifier_number
@@ -3111,7 +3130,12 @@ static int fmt__print_time_specifier(
     case 'M': value.v_unsigned = datetime->tm_min; goto t_unsigned;
     case 'S': value.v_unsigned = datetime->tm_sec; goto t_unsigned;
 
-    case 'I': value.v_unsigned = datetime->tm_hour % 12 ?: 12; goto t_unsigned;
+    case 'I':
+        value.v_unsigned = datetime->tm_hour % 12;
+        if (value.v_unsigned == 0) {
+            value.v_unsigned = 12;
+        }
+        goto t_unsigned;
 #ifdef FMT_NO_LANGINFO
     // strftime uses lowercase p for upper case strings and vice versa...
     case 'p': value.v_string = datetime->tm_hour < 12 ? "AM" : "PM"; goto t_string;
@@ -3180,6 +3204,7 @@ t_unsigned:
     spec.type = 'd';
     return fmt__print_int(writer, &spec, value.v_unsigned, 0);
 
+#ifndef FMT_NO_LANGINFO
 t_ampm_lower:
     buf_ptr = small_buf;
     for (const char *p = value.v_string; *p; ++p) {
@@ -3188,6 +3213,7 @@ t_ampm_lower:
     *buf_ptr = '\0';
     value.v_string = small_buf;
     goto t_string;
+#endif
 
 t_timezone:
     fmt__get_timezone_offset(datetime, small_buf);
@@ -3280,13 +3306,13 @@ static int fmt__print_specifier(
     const char **restrict format_specifier,
     int *restrict arg_count,
     int specifier_number,
-    va_list ap
+    fmt__va_list_ref ap
 ) {
     if (*arg_count == 0) {
         fmt_panic("\narguments exhausted at specifier {}", specifier_number);
     }
     --*arg_count;
-    fmt_Type_Id type = (fmt_Type_Id)va_arg(ap, int);
+    fmt_Type_Id type = (fmt_Type_Id)va_arg(FMT__VA_LIST_DEREF(ap), int);
     fmt_Format_Specifier fs;
     union {
         const char *v_string;
@@ -3310,33 +3336,33 @@ static int fmt__print_specifier(
         )
 
     #define FMT_TID_CASE(_tid, _v, _T, _a) \
-        case _tid: { \
-            value._v = va_arg(ap, _T); \
-            FMT_PARSE_FS(); \
-            goto _a; \
+        case _tid: {                       \
+            value._v = va_arg(FMT__VA_LIST_DEREF(ap), _T);    \
+            FMT_PARSE_FS();                \
+            goto _a;                       \
         }
 
     switch (type) {
         case fmt__TYPE_STRING:
-            value.v_pointer = va_arg(ap, const char *);
+            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char *);
             sign = 0;
             // we could do this after the t_string label but I'll keep it up
             // here for consistency
             FMT_PARSE_FS();
             goto t_string;
         case fmt__TYPE_STRING_16:
-            value.v_pointer = va_arg(ap, const char16_t *);
+            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char16_t *);
             sign = 1;
             FMT_PARSE_FS();
             goto t_string;
         case fmt__TYPE_STRING_32:
-            value.v_pointer = va_arg(ap, const char32_t *);
+            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char32_t *);
             sign = 2;
             FMT_PARSE_FS();
             goto t_string;
 
         case fmt__TYPE_CHAR: {
-            int my_value = va_arg(ap, int);
+            int my_value = va_arg(FMT__VA_LIST_DEREF(ap), int);
             if (my_value < 0) {
                 value.v_unsigned = FMT_REPLACEMENT_CHARACTER;
             } else {
@@ -3373,7 +3399,7 @@ static int fmt__print_specifier(
         FMT_TID_CASE(fmt__TYPE_DOUBLE, v_float, double, t_float)
 
         case fmt__TYPE_TIME:
-            value.v_time = va_arg(ap, struct tm *);
+            value.v_time = va_arg(FMT__VA_LIST_DEREF(ap), struct tm *);
             *format_specifier = fmt__parse_embedded_time_specifier(
                 *format_specifier, &fs, &time_format, &length, specifier_number, arg_count, ap
             );
@@ -3388,7 +3414,7 @@ static int fmt__print_specifier(
             // This is of course less safe as it could also not be a pointer but
             // that would be the users fault.
             if ((*format_specifier)[1] == 'p' || (*format_specifier)[1] == 'P') {
-                value.v_pointer = va_arg(ap, const void *);
+                value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const void *);
                 FMT_PARSE_FS();
                 goto t_pointer;
             }
@@ -3517,7 +3543,7 @@ int fmt_va_write(
                 format = open_bracket + 2;
             } else {
                 written += fmt__print_specifier(
-                    writer, &open_bracket, &arg_count, specifier_number++, ap
+                    writer, &open_bracket, &arg_count, specifier_number++, FMT__VA_LIST_REF(ap)
                 );
                 format = open_bracket;
             }

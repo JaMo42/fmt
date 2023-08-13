@@ -162,7 +162,7 @@ static const char * my_parse_specifier(
     va_list ap;
     va_start(ap, arg_count);
     const char *const end = fmt__parse_specifier(
-        format_specifier, out, type, 1, arg_count, ap
+        format_specifier, out, type, 1, arg_count, FMT__VA_LIST_REF(ap)
     );
     va_end(ap);
     return end;
