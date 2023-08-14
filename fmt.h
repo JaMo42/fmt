@@ -948,7 +948,7 @@ static char32_t fmt__va_get_character(fmt__va_list_ref ap) {
         // promoted to int
         return va_arg(FMT__VA_LIST_DEREF(ap), int);
     case fmt__TYPE_UNSIGNED:
-        return va_arg(FMT__VA_LIST_DEREF(ap), unsigned int);
+        return va_arg(FMT__VA_LIST_DEREF(ap), unsigned);
     default:
         fmt_panic("expected character type");
     }
@@ -3535,6 +3535,9 @@ t_signed:
 t_unsigned:
     switch (fs.type) {
     case 'c':
+        if (sign) {
+            value.v_unsigned = FMT_REPLACEMENT_CHARACTER;
+        }
         return fmt__print_char(writer, &fs, value.v_unsigned);
 
     case '$':

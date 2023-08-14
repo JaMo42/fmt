@@ -500,6 +500,8 @@ su_module_d(basic_printing, "basic printing", {
         expect("a", "{c}", L'a');
         expect("가", "{c}", u'가');
         expect("a", "{c}", 97);
+        expect("�", "{c}", -97);
+        expect("�", "{c}", FMT_MAX_CODEPOINT + 1);
     })
 
     su_test("strings", {
