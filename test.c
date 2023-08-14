@@ -498,6 +498,9 @@ su_module_d(basic_printing, "basic printing", {
         expect("a", "{c}", u'a');
         expect("a", "{c}", U'a');
         expect("a", "{c}", L'a');
+#ifdef __cplusplus
+        expect("a", "{}", L'a');
+#endif
         expect("가", "{c}", u'가');
         expect("a", "{c}", 97);
         expect("�", "{c}", -97);

@@ -184,6 +184,7 @@ typedef va_list fmt__va_list_ref;
 typedef enum {
     fmt__TYPE_UNKNOWN,
     fmt__TYPE_CHAR,
+    fmt__TYPE_WCHAR,
     fmt__TYPE_SIGNED_CHAR,
     fmt__TYPE_SHORT,
     fmt__TYPE_INT,
@@ -210,6 +211,7 @@ typedef enum {
 static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
     "(unknown)",
     "char",
+    "wchar_t",
     "signed char",
     "short",
     "int",
@@ -258,7 +260,7 @@ struct fmt_String {
 FMT_TYPE_ID(char, fmt__TYPE_CHAR);
 FMT_TYPE_ID(char16_t, fmt__TYPE_UNSIGNED_SHORT;)
 FMT_TYPE_ID(char32_t, fmt__TYPE_UNSIGNED;)
-FMT_TYPE_ID(wchar_t, fmt__TYPE_WCHAR;)
+FMT_TYPE_ID(wchar_t, fmt__TYPE_WCHAR);
 FMT_TYPE_ID(signed char, fmt__TYPE_SIGNED_CHAR);
 FMT_TYPE_ID(short, fmt__TYPE_SHORT);
 FMT_TYPE_ID(int, fmt__TYPE_INT);
@@ -280,8 +282,13 @@ FMT_TYPE_ID(const char16_t *, fmt__TYPE_STRING_16);
 FMT_TYPE_ID(char16_t *, fmt__TYPE_STRING_16);
 FMT_TYPE_ID(const char32_t *, fmt__TYPE_STRING_32);
 FMT_TYPE_ID(char32_t *, fmt__TYPE_STRING_32);
-FMT_TYPE_ID(wchar_t *, fmt__TYPE_WSTRING);
-FMT_TYPE_ID(const wchar_t *, fmt__TYPE_WSTRING);
+#ifdef _WIN32
+FMT_TYPE_ID(wchar_t *, fmt__TYPE_STRING_16);
+FMT_TYPE_ID(const wchar_t *, fmt__TYPE_STRING_16);
+#else
+FMT_TYPE_ID(wchar_t *, fmt__TYPE_STRING_32);
+FMT_TYPE_ID(const wchar_t *, fmt__TYPE_STRING_32);
+#endif
 FMT_TYPE_ID(void *, fmt__TYPE_POINTER);
 FMT_TYPE_ID(const void *, fmt__TYPE_POINTER);
 FMT_TYPE_ID(tm *, fmt__TYPE_TIME);
@@ -967,6 +974,7 @@ static const char * fmt__va_get_utf8_string(fmt__va_list_ref ap) {
 static const char *fmt__valid_display_types(fmt_Type_Id type) {
     switch (type) {
         case fmt__TYPE_CHAR:
+        case fmt__TYPE_WCHAR:
             // `t` is pretty useless here since it can only represent 127
             // seconds since the epoch but we want it to be equivalent to the
             // integer types.
@@ -3427,7 +3435,8 @@ static int fmt__print_specifier(
             FMT_PARSE_FS();
             goto t_string;
 
-        case fmt__TYPE_CHAR: {
+        case fmt__TYPE_CHAR:
+        case fmt__TYPE_WCHAR: {
             int my_value = va_arg(FMT__VA_LIST_DEREF(ap), int);
             if (my_value < 0) {
                 value.v_unsigned = FMT_REPLACEMENT_CHARACTER;
