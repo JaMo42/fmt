@@ -788,6 +788,30 @@ extern void fmt_translate_strftime(
         __VA_OPT__(, FMT_ARGS(__VA_ARGS__))   \
     )
 
+/// Convenience function for writing to a file.
+///
+/// Unlike the default functions for writing to stdout and stderr this is not
+/// affected by `FMT_LOCKED_DEFAULT_PRINTERS`.
+///
+/// Equivalent to:
+/// ```c
+/// fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stream);
+/// fmt_write(writer, format, ...);
+/// ```
+///
+/// Examples:
+/// ```c
+/// FILE *log_file = fopen("log.txt", "w");
+/// fmt_fprint(log_file, "Hello {}\n", "World");
+/// ```
+#define fmt_fprint(_stream, _format, ...)    \
+    fmt__fprint(                             \
+        _stream,                             \
+        _format,                             \
+        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
+        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
+    )
+
 /// Aborts the program with an error message.
 ///
 /// The error message will look like this: `file:line: message[\n]`.
@@ -835,29 +859,30 @@ extern void fmt_translate_strftime(
 #define fmt_unimplemented(...) \
     fmt_panic("not implemented" __VA_OPT__(": ") __VA_ARGS__)
 
-/// Convenience function for writing to a file.
+/// Indicates unreachable code.
 ///
-/// Unlike the default functions for writing to stdout and stderr this is not
-/// affected by `FMT_LOCKED_DEFAULT_PRINTERS`.
+/// Wraps `fmt_panic`, but unlike the other macros this expands to a do-while
+/// statement and not a function call expression.
 ///
-/// Equivalent to:
-/// ```c
-/// fmt_Writer *writer = FMT_NEW_STREAM_WRITER(stream);
-/// fmt_write(writer, format, ...);
-/// ```
+/// If `NDEBUG` is defined this will never print anything and just hints to the
+/// compiler that this code in unreachable.
 ///
 /// Examples:
 /// ```c
-/// FILE *log_file = fopen("log.txt", "w");
-/// fmt_fprint(log_file, "Hello {}\n", "World");
+/// fmt_unreachable();
+/// fmt_unreachable("string");
+/// fmt_unreachable("format {}", 123);
 /// ```
-#define fmt_fprint(_stream, _format, ...)    \
-    fmt__fprint(                             \
-        _stream,                             \
-        _format,                             \
-        FMT_VA_ARG_COUNT(__VA_ARGS__)        \
-        __VA_OPT__(, FMT_ARGS(__VA_ARGS__))  \
-    )
+#ifdef NDEBUG
+// we only support gcc and clang which both provide this builtin.
+#  define fmt_unreachable(...) __builtin_unreachable()
+#else
+#  define fmt_unreachable(...)                                              \
+    do {                                                                    \
+        fmt_panic("entered unreachable code" __VA_OPT__(": ") __VA_ARGS__); \
+        __builtin_unreachable();                                            \
+    } while (0)
+#endif
 
 #endif /* FMT_H */
 
@@ -3239,7 +3264,7 @@ static int fmt__print_time_specifier(
 #endif
     }
 
-    fmt_panic("unreachable");
+    fmt_unreachable("invalid time field after parsing");
 
 t_unsigned:
     spec.type = 'd';
@@ -3467,7 +3492,7 @@ static int fmt__print_specifier(
     #undef FMT_PARSE_FS
     #undef FMT_TID_CASE
 
-    fmt_panic("unreachable");
+    fmt_unreachable("type id value is not one of the enum variants");
 
 t_string:
     // All string functions have the same general interface and just differ in
@@ -3670,7 +3695,7 @@ static void fmt__panic_loc(fmt_Writer *writer, ...) {
     va_end(ap);
 }
 
-void fmt__panic(
+FMT__NORETURN void fmt__panic(
     const char *restrict file,
     int line,
     const char *restrict format,

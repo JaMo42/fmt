@@ -202,9 +202,16 @@ fmt_String fmt_format(const char *format, ...);
 [[noreturn]] void fmt_unimplemented(const char *format, ...);
 ```
 
-`fmt_todo` and `fmt_unimplemented` only take variadic arguments to allow for
-an optional appendix to the default message.  If they do receive arguments the
-first argument must be a string literal.
+This expands to a do-while statement.
+
+```c
+[[noreturn]] void fmt_unreachable();
+[[noreturn]] void fmt_unreachable(const char *format, ...);
+```
+
+`fmt_todo`, `fmt_unimplemented`, and `fmt_unreachable` only take variadic
+arguments to allow for an optional appendix to the default message.
+If they do receive arguments the first argument must be a string literal.
 
 ### Misc functions
 
@@ -364,7 +371,7 @@ setlocale(LC_ALL, "ko_KR.utf8");
 fmt_println("{$:.}", -1000); // "-₩1,000.00"
 ```
 
-### todo and unimplemented
+### todo, unimplemented, and unreachable
 
 ```c
 fmt_todo(); // "file:line: not yet implemented"
@@ -374,4 +381,8 @@ fmt_todo("format {}", 123); // "file:line: not yet implemented: format 123"
 fmt_unimplemented(); // "file:line: not implemented"
 fmt_unimplemented("message"); // "file:line: not implemented: message"
 fmt_unimplemented("format {}", 123); // "file:line: not implemented: format 123"
+
+fmt_unreachable(); // "file:line: entered unreachable code"
+fmt_unreachable("message"); // "file:line: entered unreachable code: message"
+fmt_unreachable("format {}", 123); // "file:line: entered unreachable code: format 123"
 ```
