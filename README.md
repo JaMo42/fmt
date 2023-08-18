@@ -171,7 +171,7 @@ typedef struct {
 } fmt_Writer;
 
 typedef struct {
-    /// Proxy type what when passed to a fmt function will cause the `data`
+    /// Proxy type that when passed to a fmt function will cause the `data`
     /// member to be free'd after printing it.
     /* unspecified */ take;
     char *data;       // must be released using free()
@@ -213,6 +213,9 @@ This expands to a do-while statement.
 arguments to allow for an optional appendix to the default message.
 If they do receive arguments the first argument must be a string literal.
 
+If `NDEBUG` is defined, `fmt_unreachable(...)` just expands to `__builtin_unreachable()`,
+otherwise it will print an error message with source location and abort the program.
+
 ### Misc functions
 
 ```c
@@ -250,7 +253,7 @@ int FMT_VA_ARG_COUNT(...);
 
 Both the `va_list` and `...` parameters for these must be pairs of type IDs and arguments, obtained from `FMT_ARGS`.
 
-Function mostly follow this pattern: `fmt_va_X` implements `fmt__X`, which implements the `fmt_X` macro.
+Functions mostly follow this pattern: `fmt_va_X` implements `fmt__X`, which implements the `fmt_X` macro.
 
 ```c
 int fmt_va_write(fmt_Writer *writer, const char *format, int arg_count, va_list ap);
@@ -308,7 +311,7 @@ typedef struct {
 } My_Writer;
 
 My_Writer writer = { ... };
-fmt_write(writer, "{}", 123);
+fmt_write((fmt_Writer *)&writer, "{}", 123);
 ```
 
 ### `fmt_String.take`
