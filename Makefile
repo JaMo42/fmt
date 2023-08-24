@@ -15,7 +15,11 @@ ifeq ($(COVERAGE),1)
 	CFLAGS += -fprofile-arcs -ftest-coverage
 endif
 
-all: test
+.PHONY: default
+default: test
+
+.PHONY: all
+all: test threading_test example cpp_build
 
 test: test.c fmt.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
@@ -31,7 +35,7 @@ coverage:
 	gcov test.c
 
 threading_test: threading_test.c fmt.h
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(CFLAGS) -pthread -o $@ $< $(LDFLAGS)
 
 example: example.c fmt.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)

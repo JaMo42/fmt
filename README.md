@@ -35,6 +35,8 @@ int main(void) {
 
 - compile with `-lm` (I don't think I can get rid of this)
 
+- if `FMT_LOCKED_DEFAULT_PRINTERS` is defined, compiling with `-pthread` *may* be neccessary, depending on platform
+
 ### Windows
 
 Windows builds only work with clang (gcc not tested), as Microsoft has moved on to C++ and `msvc` is lacking a lot of the newer standard C features.
