@@ -143,8 +143,8 @@ static fmt_String expect_spec_get_check_impl(int number, const char *checks) {
     }
     return (fmt_String) {
         .data = (char *)before,
-        .capacity = 0,
         .size = (size_t)(after - before),
+        .capacity = 0,
     };
 }
 
@@ -595,8 +595,8 @@ su_module_d(basic_printing, "basic printing", {
         char data[] = "Hello World";
         fmt_String string = ((fmt_String) {
             .data = data,
-            .capacity = 0,
             .size = sizeof(data) - 1,
+            .capacity = 0,
         });
         expect("Hello World", "{}", string);
         string.size = 5;

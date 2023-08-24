@@ -3677,8 +3677,8 @@ fmt_String fmt_va_format(const char *format, int arg_count, va_list ap) {
         .base = fmt_ALLOC_WRITER_FUNCTIONS,
         .string = (fmt_String) {
             .data = (char *)malloc(INIT_CAP + 1),
-            .capacity = INIT_CAP,
             .size = 0,
+            .capacity = INIT_CAP,
         },
     };
     fmt_va_write((fmt_Writer*)&writer, format, arg_count, ap);
@@ -3844,8 +3844,8 @@ fmt_String fmt_format_time(
         .base = fmt_ALLOC_WRITER_FUNCTIONS,
         .string = (fmt_String) {
             .data = (char *)malloc(INIT_CAP + 1),
-            .capacity = INIT_CAP,
             .size = 0,
+            .capacity = INIT_CAP,
         },
     };
     fmt_write_time((fmt_Writer*)&writer, format, datetime);
