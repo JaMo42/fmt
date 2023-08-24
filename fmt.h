@@ -240,7 +240,6 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
 
 struct fmt_String_Take {
     char *data;
-    size_t capacity;
     size_t size;
 };
 
@@ -249,8 +248,8 @@ struct fmt_String {
         fmt_String_Take take;
         struct {
             char *data;
-            size_t capacity;
             size_t size;
+            size_t capacity;
         };
     };
 };
@@ -390,14 +389,13 @@ typedef struct {
         /// member to be free'd after printing it.
         struct fmt_String_Take {
             char *data;
-            size_t capacity;
             size_t size;
         } take;
 
         struct {
             char *data;
-            size_t capacity;
             size_t size;
+            size_t capacity;
         };
     };
 } fmt_String;
