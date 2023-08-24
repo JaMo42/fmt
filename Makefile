@@ -42,7 +42,7 @@ example: example.c fmt.h
 
 cpp_build: test.c fmt.h
 	cp test.c test.cpp
-	-$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+	-$(CXX) $(CXXFLAGS) -o $@ test.cpp $(LDFLAGS)
 	rm test.cpp
 
 .PHONY: vg
