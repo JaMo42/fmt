@@ -18,11 +18,11 @@
 #ifndef _WIN32
 #  include <threads.h>
 #  define FMT__THREAD_LOCAL thread_local
+#else
 #  ifdef FMT_LOCKED_DEFAULT_PRINTERS
 #    undef FMT_LOCKED_DEFAULT_PRINTERS
 #    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not implemented on this platform"
 #  endif
-#else
 #  if __STDC_VERSION__ <= 201710L
 #    define FMT__THREAD_LOCAL _Thread_local
 #  else
