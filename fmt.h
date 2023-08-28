@@ -896,6 +896,7 @@ extern void fmt_translate_strftime(
 
 
 #ifdef FMT_IMPLEMENTATION
+#undef FMT_IMPLEMENTATION
 
 ////////////////////////////////////////////////////////////////////////////////
 // Type ID functions
