@@ -383,9 +383,6 @@ typedef struct {
 #ifndef __cplusplus
 typedef struct {
     union {
-        // fmt_String_Take must be a full copy of the string structure since
-        // we need to pass it through the variadic arguments.
-
         /// Proxy type what when passed to a fmt function will cause the `data`
         /// member to be free'd after printing it.
         struct fmt_String_Take {
@@ -975,9 +972,6 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
     switch (type) {
         case fmt__TYPE_CHAR:
         case fmt__TYPE_WCHAR:
-            // `t` is pretty useless here since it can only represent 127
-            // seconds since the epoch but we want it to be equivalent to the
-            // integer types.
             return "bcdioxX$";
         case fmt__TYPE_SIGNED_CHAR:
         case fmt__TYPE_SHORT:
@@ -1367,14 +1361,14 @@ static int fmt__utf8_decode(
         return 2;
     } else if (data[0] < 0xf0) {
         *codepoint = (((char32_t)(data[0] & 0x0f) << 12)
-                        | ((char32_t)(data[1] & 0x3f) << 6)
-                        | (data[2] & 0x3f));
+                      | ((char32_t)(data[1] & 0x3f) << 6)
+                      | (data[2] & 0x3f));
         return 3;
     } else {
         *codepoint = (((char32_t)(data[0] & 0x07) << 18)
-                        | ((char32_t)(data[1] & 0x3f) << 12)
-                        | ((char32_t)(data[2] & 0x3f) << 6)
-                        | (data[3] & 0x3f));
+                      | ((char32_t)(data[1] & 0x3f) << 12)
+                      | ((char32_t)(data[2] & 0x3f) << 6)
+                      | (data[3] & 0x3f));
         return 4;
     }
 }
@@ -2593,7 +2587,9 @@ static int fmt__print_utf8(
     const char *restrict string,
     int len
 ) {
-    const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(string, len, fs->precision);
+    const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(
+        string, len, fs->width > 0 ? fs->precision : 0
+    );
 
     int to_print = width_and_length.second;
     if (fs->precision >= 0 && fs->precision < to_print) {
@@ -2616,7 +2612,9 @@ static int fmt__print_utf16(
     const char16_t *restrict string,
     int len
 ) {
-    const fmt_Int_Pair width_and_length = fmt__utf16_width_and_length(string, len, fs->precision);
+    const fmt_Int_Pair width_and_length = fmt__utf16_width_and_length(
+        string, len, fs->width > 0 ? fs->precision : 0
+    );
 
     int to_print = width_and_length.second;
     if (fs->precision >= 0 && fs->precision < to_print) {
@@ -2639,7 +2637,7 @@ static int fmt__print_utf32(
     const char32_t *restrict string,
     int len
 ) {
-    const int width = fmt__utf32_width(string, len);
+    const int width = fs->width > 0 ? fmt__utf32_width(string, len) : 0;
 
     int to_print = len;
     if (fs->precision >= 0 && fs->precision < to_print) {
