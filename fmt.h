@@ -1541,7 +1541,7 @@ static int fmt__write_utf32(
 static int fmt__utf8_chars_len(const char *str, int chars) {
     int length = 0;
     int cp_len;
-    while (*str && chars--) {
+    while (chars--) {
         cp_len = fmt__utf8_codepoint_length(*str);
         length += cp_len;
         str += cp_len;
@@ -1551,7 +1551,7 @@ static int fmt__utf8_chars_len(const char *str, int chars) {
 
 static int fmt__utf16_chars_len(const char16_t *str, int chars) {
     int length = 0;
-    while (*str++ && chars--) {
+    while (chars--) {
         if (*str >= 0xD800 && *str <= 0xDBFF) {
             ++str;
         }
@@ -1562,11 +1562,10 @@ static int fmt__utf16_chars_len(const char16_t *str, int chars) {
 }
 
 static int fmt__utf32_chars_len(const char32_t *str, int chars) {
-    int length = 0;
-    while (*str++ && chars--) {
-        ++length;
-    }
-    return length;
+    // this function is useless now but we still need for the table in
+    // fmt__print_specifier.
+    (void)str;
+    return chars;
 }
 
 static const char * fmt__utf8_skip(const char *str, int n) {
