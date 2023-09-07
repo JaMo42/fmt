@@ -102,7 +102,7 @@ The overall syntax of *replacement fields* is:
 
 The overall syntax of *format specifiers* is:
 
-    :[[fill]align][sign][#][0][width][group][.precision]
+    :[[fill]align][sign][#][0][width][group][.precision][?]
 
 The `fill`, `width`, and `precision` fields can be parameterized if by using `{}`,
 in this case their values must be passed after the value being formatted and in the order they appear in in the format specifier.
@@ -120,6 +120,9 @@ There are few differences compared to usual implementations to note here:
 - The field width takes display width into account (i.e. `가` is 2 width, `a` is 1 wide)
 
 - The precision field for strings specifies the number of Unicode codepoints.
+
+- `?` enables the debug format, similar to rust.
+  In this library this only affects charactes and strings, which will be printed with quotation marks and non-printable characters will be escaped.
 
 ### Embedded time formats
 

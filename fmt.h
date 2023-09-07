@@ -37,6 +37,7 @@
 #ifndef FMT_NO_LANGINFO
 #  include <langinfo.h>
 #endif
+#include <wctype.h>
 
 // `char8_t` is only available since C23 but we also want to support C11 so
 // since we need our typedef anyways we never use `char8_t` since we wouldn't
@@ -1317,6 +1318,27 @@ static bool fmt__is_valid_codepoint(char32_t codepoint) {
     return !is_surrogate && codepoint <= FMT_MAX_CODEPOINT;
 }
 
+/*
+/// Returns the number of bytes a codepoint takes in UTF-8 representation.
+static int fmt__codepint_utf8_length(char32_t codepoint) {
+    if (!fmt__is_valid_codepoint(codepoint)) {
+        return 3;
+    }
+    if (codepoint < (1 << 7)) {
+        return 1;
+    }
+    if (codepoint < (1 << 11)) {
+        return 2;
+    }
+    if (codepoint < (1 << 16)) {
+        return 3;
+    }
+    {
+        return 4;
+    }
+}
+*/
+
 /// Returns the display width of an ascii character.
 static int fmt__ascii_display_width(char ch_) {
     unsigned ch = ch_;
@@ -1373,6 +1395,21 @@ static int fmt__utf8_decode(
     }
 }
 
+#define FMT__ITER_UTF16(_str, _len, ...)                      \
+    do {                                                      \
+        char32_t codepoint;                                   \
+        while (_len --> 0) {                                  \
+            codepoint = *_str++;                              \
+            if (codepoint >= 0xD800 && codepoint <= 0xDBFF) { \
+                codepoint = (codepoint & 0x3FF) << 10;        \
+                codepoint |= (char32_t)*_str++ & 0x3FF;       \
+                codepoint += 0x10000;                         \
+                --_len;                                       \
+            }                                                 \
+            { __VA_ARGS__ }                                   \
+        }                                                     \
+    } while (0)
+
 /// Returns the display width and number of codepoints in a UTF-8 encoded string.
 /// If `size` is negative it is determined using `strlen`.
 /// If `max_chars_for_width` is non-negative only that many characters are used
@@ -1424,20 +1461,12 @@ static fmt_Int_Pair fmt__utf16_width_and_length(
     if (max_chars_for_width < 0) {
         max_chars_for_width = size;
     }
-    char32_t c;
-    while (size --> 0) {
-        c = *str++;
-        if (c >= 0xD800 && c <= 0xDBFF) {
-            c = (c & 0x3FF) << 10;
-            c |= (char32_t)*str++ & 0x3FF;
-            c += 0x10000;
-            --size;
-        }
+    FMT__ITER_UTF16(str, size, {
         if (max_chars_for_width-- > 0) {
-            width += fmt__display_width(c);
+            width += fmt__display_width(codepoint);
         }
         ++length;
-    }
+    });
     return (fmt_Int_Pair) { width, length };
 }
 
@@ -1513,18 +1542,10 @@ static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
 static int fmt__write_utf16(
     fmt_Writer *restrict writer, const char16_t *restrict str, int len
 ) {
-    char32_t c;
     int written = 0;
-    while (len --> 0) {
-        c = *str++;
-        if (c >= 0xD800 && c <= 0xDBFF) {
-            c = (c & 0x3FF) << 10;
-            c |= (char32_t)*str++ & 0x3FF;
-            c += 0x10000;
-            --len;
-        }
-        written += fmt__write_codepoint(writer, c);
-    }
+    FMT__ITER_UTF16(str, len, {
+        written += fmt__write_codepoint(writer, codepoint);
+    });
     return written;
 }
 
@@ -1654,6 +1675,7 @@ typedef struct {
     int width;
     char type;
     bool alternate_form;
+    bool debug;
 } fmt_Format_Specifier;
 
 static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
@@ -1665,6 +1687,7 @@ static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
     spec->width = 0;
     spec->group = 0;
     spec->precision = -1;
+    spec->debug = false;
 }
 
 static void fmt__time_format_specifier_default(
@@ -1697,6 +1720,7 @@ static void fmt__time_format_specifier_default(
     spec->sign = fmt_SIGN_NEGATIVE;
     spec->alternate_form = false;
     spec->group = 0;
+    spec->debug = false;
 }
 
 static int fmt__parse_alignment(char ch) {
@@ -1848,8 +1872,10 @@ static const char * fmt__parse_specifier_after_colon(
     // specifier for it to be the grouping character.  Anything else in this
     // position must be the grouping character.
     char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
-    if ((*format_specifier != '.' && *format_specifier != '}')
-        || next == '.' || next == '}') {
+    // FIXME: sane condition
+    if (((*format_specifier != '.' && *format_specifier != '}' && *format_specifier != '?')
+         || next == '.' || next == '}' || next == '?')
+        && !(*format_specifier == '?' && next == '}')) {
         format_specifier += fmt__utf8_decode(
             (const fmt_char8_t *)format_specifier, &out->group
         );
@@ -1869,11 +1895,15 @@ static const char * fmt__parse_specifier_after_colon(
             format_specifier, "precision", &out->precision, specifier_number, arg_count, ap
         );
     }
+    // Debug
+    if (*format_specifier == '?') {
+        ++format_specifier;
+        out->debug = true;
+    }
     if (*format_specifier++ != '}') {
         fmt_panic("format specifier {} is invalid", specifier_number);
     }
     return format_specifier;
-
 }
 
 static const char * fmt__parse_specifier(
@@ -2577,6 +2607,223 @@ static double fmt__pow10(int exp) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Debug format
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct {
+    bool escape_single_quote;
+    bool escape_double_quote;
+} fmt__DebugCharEscapeArgs;
+
+/// Escapes that are independant of fmt__DebugCharEscapeArgs
+#define FMT__DEBUG_ENUM_COMMON_ESCAPES(o) \
+    o('\0', "\\0") \
+    o('\t', "\\t") \
+    o('\r', "\\r") \
+    o('\n', "\\n") \
+    o('\\', "\\\\")
+
+static int fmt__debug_escaped_char_width(char32_t ch, fmt__DebugCharEscapeArgs args) {
+    #define O(_ch, _) case _ch:
+    switch (ch) {
+    FMT__DEBUG_ENUM_COMMON_ESCAPES(O)
+        return 2;
+    case '"':
+        if (args.escape_double_quote) {
+            return 2;
+        }
+        break;
+    case '\'':
+        if (args.escape_single_quote) {
+            return 2;
+        }
+        break;
+    }
+    #undef O
+    if (iswprint(ch)) {
+        return fmt__display_width(ch);
+    } else if (ch < 0x10000) {
+        // "\uXXXX"
+        return 6;
+    } else {
+        // "\uXXXXXXXX"
+        return 10;
+    }
+}
+
+static int fmt__debug_char_width(char32_t ch) {
+    return fmt__debug_escaped_char_width(ch, (fmt__DebugCharEscapeArgs) {
+        .escape_single_quote = true,
+        .escape_double_quote = false,
+    });
+}
+
+static fmt_Int_Pair fmt__debug_utf8_width_and_length(
+    const char *str, int size, int max_chars_for_width
+) {
+    int width = 0;
+    int length = 0;
+    if (size < 0) {
+        size = strlen(str);
+    }
+    if (max_chars_for_width < 0) {
+        max_chars_for_width = size;
+    }
+    const fmt_char8_t *p = (const fmt_char8_t *)str;
+    const fmt_char8_t *end = p + size;
+    char32_t codepoint;
+    while (p != end) {
+        p += fmt__utf8_decode(p, &codepoint);
+        if (max_chars_for_width-- > 0) {
+            width += fmt__debug_escaped_char_width(
+                codepoint,
+                (fmt__DebugCharEscapeArgs) {
+                    .escape_single_quote = false,
+                    .escape_double_quote = true,
+                }
+            );
+        }
+        ++length;
+    }
+    return (fmt_Int_Pair) { width, length };
+}
+
+static fmt_Int_Pair fmt__debug_utf16_width_and_length(
+    const char16_t *str, int size, int max_chars_for_width
+) {
+    int width = 0;
+    int length = 0;
+    if (size < 0) {
+        size = fmt__utf16_strlen(str);
+    }
+    if (max_chars_for_width < 0) {
+        max_chars_for_width = size;
+    }
+    FMT__ITER_UTF16(str, size, {
+        if (max_chars_for_width-- > 0) {
+            width += fmt__debug_escaped_char_width(
+                codepoint,
+                (fmt__DebugCharEscapeArgs) {
+                    .escape_single_quote = false,
+                    .escape_double_quote = true,
+                }
+            );
+        }
+        ++length;
+    });
+    return (fmt_Int_Pair) { width, length };
+}
+
+static int fmt__debug_utf32_width(const char32_t *str, int size) {
+    int width = 0;
+    if (size < 0) {
+        size = fmt__utf32_strlen(str);
+    }
+    while (size --> 0) {
+        width += fmt__debug_escaped_char_width(
+            *str++,
+            (fmt__DebugCharEscapeArgs) {
+                .escape_single_quote = false,
+                .escape_double_quote = true,
+            }
+        );
+    }
+    return width;
+}
+
+static int fmt__debug_write_char(
+    fmt_Writer *writer, char32_t ch, fmt__DebugCharEscapeArgs args
+) {
+    #define O(_ch, _esc) case _ch: return writer->write_data(writer, _esc, 2);
+    switch (ch) {
+    FMT__DEBUG_ENUM_COMMON_ESCAPES(O);
+    case '"':
+        if (args.escape_double_quote) {
+            return writer->write_data(writer, "\\\"", 2);
+        }
+        break;
+    case '\'':
+        if (args.escape_single_quote) {
+            return writer->write_data(writer, "\\'", 2);
+        }
+        break;
+    }
+    #undef O
+    // XXX: not sure if invalid codepoints should also be printed as escape
+    //      sequences
+    // TODO: maybe an option to print unprintable ascii characters as "\xhh"
+    //       (hex) or "\nnn" (octal)
+    if (iswprint(ch) || ch > FMT_MAX_CODEPOINT) {
+        char buf[4];
+        const int len = fmt__utf8_encode(ch, buf);
+        return writer->write_data(writer, buf, len);
+    } else if (ch < 0x10000) {
+        return fmt_write(writer, "\\u{X:0>4}", ch);
+    } else {
+        return fmt_write(writer, "\\U{X:0>8}", ch);
+    }
+}
+
+static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len) {
+    #define O(_ch, _) _ch,
+    static const char ESCAPE_ME[] = { FMT__DEBUG_ENUM_COMMON_ESCAPES(O) '"' };
+    #undef O
+    int written = 0;
+    char32_t codepoint = 0;
+    const char *begin = str;
+    const char *end = str;
+    int n = 0;
+    while (len --> 0) {
+        n = fmt__utf8_decode((const fmt_char8_t *)end, &codepoint);
+        if ((memchr(ESCAPE_ME, codepoint, sizeof(ESCAPE_ME))
+             || !iswprint(codepoint))
+            && codepoint != FMT_REPLACEMENT_CHARACTER) {
+            if (begin != end) {
+                written += writer->write_data(writer, begin, end - begin);
+            }
+            written += fmt__debug_write_char(writer, codepoint, (fmt__DebugCharEscapeArgs) {
+                .escape_single_quote = false,
+                .escape_double_quote = true,
+            });
+            begin = end + n;
+        }
+        end += n;
+    }
+    if (*begin) {
+        written += writer->write_data(writer, begin, end - begin);
+    }
+    return written;
+}
+
+static int fmt__debug_write_utf16(
+    fmt_Writer *restrict writer, const char16_t *restrict str, int len
+) {
+    int written = 0;
+    FMT__ITER_UTF16(str, len, {
+        written += fmt__debug_write_char(writer, codepoint, (fmt__DebugCharEscapeArgs) {
+            .escape_single_quote = false,
+            .escape_double_quote = true,
+        });
+    });
+    return written;
+}
+
+static int fmt__debug_write_utf32(
+    fmt_Writer *restrict writer, const char32_t *restrict str, int len
+) {
+    int written = 0;
+    while (len --> 0) {
+        written += fmt__debug_write_char(writer, *str++, (fmt__DebugCharEscapeArgs) {
+            .escape_single_quote = false,
+            .escape_double_quote = true,
+        });
+    }
+    return written;
+}
+
+#undef FMT__ITER_UTF16
+
+////////////////////////////////////////////////////////////////////////////////
 // Printing functions
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -2586,20 +2833,33 @@ static int fmt__print_utf8(
     const char *restrict string,
     int len
 ) {
-    const fmt_Int_Pair width_and_length = fmt__utf8_width_and_length(
-        string, len, fs->width > 0 ? fs->precision : 0
-    );
+    const fmt_Int_Pair width_and_length = fs->debug
+        ? fmt__debug_utf8_width_and_length(
+            string, len, fs->width > 0 ? fs->precision : 0
+        )
+        : fmt__utf8_width_and_length(
+            string, len, fs->width > 0 ? fs->precision : 0
+        );
 
     int to_print = width_and_length.second;
     if (fs->precision >= 0 && fs->precision < to_print) {
         to_print = fs->precision;
     }
 
-    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width_and_length.first, fs->align);
+    const int overhead = fs->debug ? 2 : 0;
+    const fmt_Int_Pair pad = fmt__distribute_padding(
+        fs->width - (width_and_length.first + overhead), fs->align
+    );
 
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
-    written += fmt__write_utf8(writer, string, to_print);
+    if (fs->debug) {
+        written += writer->write_byte(writer, '\"');
+        written += fmt__debug_write_utf8(writer, string, to_print);
+        written += writer->write_byte(writer, '\"');
+    } else {
+        written += fmt__write_utf8(writer, string, to_print);
+    }
     written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
@@ -2611,20 +2871,33 @@ static int fmt__print_utf16(
     const char16_t *restrict string,
     int len
 ) {
-    const fmt_Int_Pair width_and_length = fmt__utf16_width_and_length(
-        string, len, fs->width > 0 ? fs->precision : 0
-    );
+    const fmt_Int_Pair width_and_length = fs->debug
+        ? fmt__debug_utf16_width_and_length(
+            string, len, fs->width > 0 ? fs->precision : 0
+        )
+        : fmt__utf16_width_and_length(
+            string, len, fs->width > 0 ? fs->precision : 0
+        );
 
     int to_print = width_and_length.second;
     if (fs->precision >= 0 && fs->precision < to_print) {
         to_print = fs->precision;
     }
 
-    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width_and_length.first, fs->align);
+    const int overhead = fs->debug ? 2 : 0;
+    const fmt_Int_Pair pad = fmt__distribute_padding(
+        fs->width - (width_and_length.first + overhead), fs->align
+    );
 
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
-    written += fmt__write_utf16(writer, string, to_print);
+    if (fs->debug) {
+        written += writer->write_byte(writer, '\"');
+        written += fmt__debug_write_utf16(writer, string, to_print);
+        written += writer->write_byte(writer, '\"');
+    } else {
+        written += fmt__write_utf16(writer, string, to_print);
+    }
     written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
@@ -2636,18 +2909,28 @@ static int fmt__print_utf32(
     const char32_t *restrict string,
     int len
 ) {
-    const int width = fs->width > 0 ? fmt__utf32_width(string, len) : 0;
+    const int width = fs->width > 0
+        ? (fs->debug
+            ? 2 + fmt__debug_utf32_width(string, len)
+            : fmt__utf32_width(string, len))
+        : 0;
 
     int to_print = len;
     if (fs->precision >= 0 && fs->precision < to_print) {
         to_print = fs->precision;
     }
 
-    fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width, fs->align);
+    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - width, fs->align);
 
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
-    written += fmt__write_utf32(writer, string, to_print);
+    if (fs->debug) {
+        written += writer->write_byte(writer, '\"');
+        written += fmt__debug_write_utf32(writer, string, to_print);
+        written += writer->write_byte(writer, '\"');
+    } else {
+        written += fmt__write_utf32(writer, string, to_print);
+    }
     written += fmt__pad(writer, pad.second, fs->fill);
 
     return written;
@@ -2656,10 +2939,29 @@ static int fmt__print_utf32(
 static int fmt__print_char(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, char32_t ch
 ) {
-    char buf[4];
-    const int len = fmt__utf8_encode(ch, buf);
-    fs->precision = -1;
-    return fmt__print_utf8(writer, fs, buf, len);
+    const int width = (fs->debug
+                       ? 2 + fmt__debug_char_width(ch)
+                       : fmt__display_width(ch));
+
+    const fmt_Int_Pair pad = fmt__distribute_padding(
+        fs->width - width, fs->align
+    );
+
+    int written = 0;
+    written += fmt__pad(writer, pad.first, fs->fill);
+    if (fs->debug) {
+        written += writer->write_byte(writer, '\'');
+        written += fmt__debug_write_char(writer, ch, (fmt__DebugCharEscapeArgs) {
+            .escape_single_quote = true,
+            .escape_double_quote = false,
+        });
+        written += writer->write_byte(writer, '\'');
+    } else {
+        written += fmt__write_codepoint(writer, ch);
+    }
+    written += fmt__pad(writer, pad.second, fs->fill);
+
+    return written;
 }
 
 static int fmt__print_int(
@@ -3649,9 +3951,6 @@ int fmt__std_print(
     int arg_count,
     ...
 ) {
-#ifdef FMT_LOCKED_DEFAULT_PRINTERS
-    mtx_lock(&fmt__print_mutex);
-#endif
     fmt_Stream_Writer swriter = {
         .base = fmt_STREAM_WRITER_FUNCTIONS,
         .stream = stream,
@@ -3659,14 +3958,17 @@ int fmt__std_print(
     fmt_Writer *writer = (fmt_Writer *)&swriter;
     va_list ap;
     va_start(ap, arg_count);
+#ifdef FMT_LOCKED_DEFAULT_PRINTERS
+    mtx_lock(&fmt__print_mutex);
+#endif
     const int written = fmt_va_write(writer, format, arg_count, ap) + newline;
     if (newline) {
         writer->write_byte(writer, '\n');
     }
-    va_end(ap);
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_unlock(&fmt__print_mutex);
 #endif
+    va_end(ap);
     return written;
 }
 

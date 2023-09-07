@@ -332,17 +332,34 @@ static int format_specifier_parsing_tests() {
     expect_spec(fmt__TYPE_INT, "{x}")(
         spec.type == 'x'
     );
-    expect_spec(fmt__TYPE_INT, "{:{}^+#{}..{}}", 'a', 123, 456)(
+    expect_spec(fmt__TYPE_INT, "{:{}^+#{}..{}?}", 'a', 123, 456)(
         spec.fill == 'a',
         spec.align == fmt_ALIGN_CENTER,
         spec.sign == fmt_SIGN_ALWAYS,
         spec.alternate_form == true,
         spec.group == '.',
-        spec.precision == 456
+        spec.precision == 456,
+        spec.debug == true
+    );
+    expect_spec(fmt__TYPE_INT, "{:.}")(
+        spec.group == '.'
+    );
+    expect_spec(fmt__TYPE_INT, "{:.?}")(
+        spec.group == '.'
+    );
+    expect_spec(fmt__TYPE_INT, "{:.1?}")(
+        spec.precision == 1,
+        spec.debug == true,
     );
     expect_spec(fmt__TYPE_INT, "{:{}<0}", 'a')(
         spec.fill == '0',
         spec.align == fmt_ALIGN_AFTER_SIGN,
+    );
+    fmt_Format_Specifier def;
+    fmt__format_specifier_default(&def);
+    expect_spec(fmt__TYPE_INT, "{:?}")(
+        spec.group != '?',
+        spec.debug == true
     );
 skip:
     return su__status;
@@ -390,6 +407,7 @@ su_module_d(internal_functions, "internal functions", {
 #ifndef FMT_FAST_DISPLAY_WIDTH
         su_assert_eq(fmt__display_width(u'\u0303'), 0);
 #endif
+        su_assert_eq(fmt__debug_char_width('a'), 1);
     })
 
     su_test("float base and exponent", {
@@ -709,6 +727,106 @@ su_module(formatting, {
         expect(" 2.0", "{: }", 2.0);
         expect("+$1.20", "{$:+}", 1.2);
         expect(" $1.20", "{$: }", 1.2);
+    })
+
+    su_test("debug format", {
+        expect("'a'", "{c:?}", 'a');
+        expect("'\\0'", "{c:?}", '\0');
+        expect("'\\t'", "{c:?}", '\t');
+        expect("'\\r'", "{c:?}", '\r');
+        expect("'\\n'", "{c:?}", '\n');
+        expect("'\\\\'", "{c:?}", '\\');
+        expect("'\\''", "{c:?}", '\'');
+        expect("'\"'", "{c:?}", '"');
+        expect("'�'", "{c:?}", FMT_MAX_CODEPOINT + 1);
+
+        // UTF-8
+
+        expect("a\"a\"a", "a{:?}a", "a");
+        expect("a\"\\0\"a", "a{:.1?}a", "\0");
+        expect("a\"\\t\"a", "a{:?}a", "\t");
+        expect("a\"\\r\"a", "a{:?}a", "\r");
+        expect("a\"\\n\"a", "a{:?}a", "\n");
+        expect("a\"\\\\\"a", "a{:?}a", "\\");
+        expect("a\"'\"a", "a{:?}a", "'");
+        expect("a\"\\\"\"a", "a{:?}a", "\"");
+
+        expect("\"aaa\"", "{:?}", "aaa");
+        expect("\"a\\0a\"", "{:.3?}", "a\0a");
+        expect("\"a\\ta\"", "{:?}", "a\ta");
+        expect("\"a\\ra\"", "{:?}", "a\ra");
+        expect("\"a\\na\"", "{:?}", "a\na");
+        expect("\"a\\\\a\"", "{:?}", "a\\a");
+        expect("\"a'a\"", "{:?}", "a'a");
+        expect("\"a\\\"a\"", "{:?}", "a\"a");
+
+        expect("\"\\0\\0\\0\"", "{:.3?}", "\0\0\0");
+        expect("\"\\t\\t\\t\"", "{:?}", "\t\t\t");
+        expect("\"\\r\\r\\r\"", "{:?}", "\r\r\r");
+        expect("\"\\n\\n\\n\"", "{:?}", "\n\n\n");
+        expect("\"\\\\\\\\\\\\\"", "{:?}", "\\\\\\");
+        expect("\"\\\"\\\"\\\"\"", "{:?}", "\"\"\"");
+
+        // UTF-16
+
+        expect("a\"a\"a", "a{:?}a", u"a");
+        expect("a\"\\0\"a", "a{:.1?}a", u"\0");
+        expect("a\"\\t\"a", "a{:?}a", u"\t");
+        expect("a\"\\r\"a", "a{:?}a", u"\r");
+        expect("a\"\\n\"a", "a{:?}a", u"\n");
+        expect("a\"\\\\\"a", "a{:?}a", u"\\");
+        expect("a\"'\"a", "a{:?}a", u"'");
+        expect("a\"\\\"\"a", "a{:?}a", u"\"");
+
+        expect("\"aaa\"", "{:?}", u"aaa");
+        expect("\"a\\0a\"", "{:.3?}", u"a\0a");
+        expect("\"a\\ta\"", "{:?}", u"a\ta");
+        expect("\"a\\ra\"", "{:?}", u"a\ra");
+        expect("\"a\\na\"", "{:?}", u"a\na");
+        expect("\"a\\\\a\"", "{:?}", u"a\\a");
+        expect("\"a'a\"", "{:?}", u"a'a");
+        expect("\"a\\\"a\"", "{:?}", u"a\"a");
+
+        expect("\"\\0\\0\\0\"", "{:.3?}", u"\0\0\0");
+        expect("\"\\t\\t\\t\"", "{:?}", u"\t\t\t");
+        expect("\"\\r\\r\\r\"", "{:?}", u"\r\r\r");
+        expect("\"\\n\\n\\n\"", "{:?}", u"\n\n\n");
+        expect("\"\\\\\\\\\\\\\"", "{:?}", u"\\\\\\");
+        expect("\"\\\"\\\"\\\"\"", "{:?}", u"\"\"\"");
+
+        // UTF-32
+
+        expect("a\"a\"a", "a{:?}a", U"a");
+        expect("a\"\\0\"a", "a{:.1?}a", U"\0");
+        expect("a\"\\t\"a", "a{:?}a", U"\t");
+        expect("a\"\\r\"a", "a{:?}a", U"\r");
+        expect("a\"\\n\"a", "a{:?}a", U"\n");
+        expect("a\"\\\\\"a", "a{:?}a", U"\\");
+        expect("a\"'\"a", "a{:?}a", U"'");
+        expect("a\"\\\"\"a", "a{:?}a", U"\"");
+
+        expect("\"aaa\"", "{:?}", U"aaa");
+        expect("\"a\\0a\"", "{:.3?}", U"a\0a");
+        expect("\"a\\ta\"", "{:?}", U"a\ta");
+        expect("\"a\\ra\"", "{:?}", U"a\ra");
+        expect("\"a\\na\"", "{:?}", U"a\na");
+        expect("\"a\\\\a\"", "{:?}", U"a\\a");
+        expect("\"a'a\"", "{:?}", U"a'a");
+        expect("\"a\\\"a\"", "{:?}", U"a\"a");
+
+        expect("\"\\0\\0\\0\"", "{:.3?}", U"\0\0\0");
+        expect("\"\\t\\t\\t\"", "{:?}", U"\t\t\t");
+        expect("\"\\r\\r\\r\"", "{:?}", U"\r\r\r");
+        expect("\"\\n\\n\\n\"", "{:?}", U"\n\n\n");
+        expect("\"\\\\\\\\\\\\\"", "{:?}", U"\\\\\\");
+        expect("\"\\\"\\\"\\\"\"", "{:?}", U"\"\"\"");
+
+        // Width calculation
+
+        expect("  '\\n'  ", "{c:^8?}", '\n');
+        expect("  \"\\n\"  ", "{:^8?}", "\n");
+        expect("  \"\\n\"  ", "{:^8?}", u"\n");
+        expect("  \"\\n\"  ", "{:^8?}", U"\n");
     })
 })
 

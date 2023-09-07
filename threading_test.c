@@ -12,7 +12,11 @@ static const struct timespec t_sleep = {
 int worker(void *arg) {
     int number = (int)(uintptr_t)arg;
     for (int i = 0; i < 10; ++i) {
-        fmt_println("{}: The quick brown fox jumps over the lazy dog", number);
+        fmt_println(
+            "{}: {} {} {} {} {} {} {} {} {}",
+            number, "The", "quick","brown", "fox",
+            "jumps", "over", "the", "lazy", "dog"
+        );
         thrd_yield();
         thrd_sleep(&t_sleep, NULL);
         thrd_yield();
