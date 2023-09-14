@@ -2505,7 +2505,7 @@ static int fmt__write_float_integer_digits(
     char32_t groupchar,
     int group_interval
 ) {
-    if (f <= (double)UINT64_MAX) {
+    if (f < (double)UINT64_MAX) {
         if (group_interval) {
             return fmt__write_digits_10_grouped(writer, (uint64_t)f, length, groupchar);
         } else {
