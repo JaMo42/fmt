@@ -2522,9 +2522,8 @@ static int fmt__write_float_integer_digits(
         writer->write_byte(writer, '0' + digit);
         // We don't check if group_interval is 0 here but since group_at starts
         // at 0 in that case we need to overflow it and then go all the way
-        // back to 0 until it matters, I'm not sure if that can actually happen
-        // but I will just leave it like this for now.
-        if (group_at-- == 0) {
+        // back to 0 until it matters.
+        if (--group_at == 0) {
             writer->write_byte(writer, groupchar);
             ++written;
             group_at = group_interval;
