@@ -526,7 +526,7 @@ extern int fmt_va_write(
 ///         log_writer,
 ///         "{}: " _format,
 ///         1 + FMT_VA_ARG_COUNT(__VA_ARGS__),
-///         current_time(),
+///         current_time()
 ///         __VA_OPT__(, FMT_ARGS(__VA_ARGS__)
 ///     )
 ///
@@ -1542,6 +1542,7 @@ static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
 static int fmt__write_utf16(
     fmt_Writer *restrict writer, const char16_t *restrict str, int len
 ) {
+    // TODO: write into intermediate buffer first
     int written = 0;
     FMT__ITER_UTF16(str, len, {
         written += fmt__write_codepoint(writer, codepoint);
@@ -3408,8 +3409,12 @@ static const char * fmt__timezone_name(const struct tm *datetime) {
     size_t unused;
     _get_tzname(&unused, buf, sizeof(buf), 0);
     return buf;
-#else
+#elif defined(__USE_MISC)
+    // Using this double underscore macro seems quite sketchy but I don't know
+    // how else to do it and it works for me :^)
     return datetime->tm_zone;
+#else
+    return datetime->__tm_zone;
 #endif
 }
 
@@ -3420,8 +3425,10 @@ static void fmt__get_timezone_offset(
     (void)datetime;
     long offset;
     _get_timezone(&offset);
-#else
+#elif defined(__USE_MISC)
     long offset = datetime->tm_gmtoff;
+#else
+    long offset = datetime->__tm_gmtoff;
 #endif
     if (offset < 0) {
         offset = -offset;
@@ -3707,11 +3714,11 @@ static int fmt__print_specifier(
             *format_specifier, &fs, type, specifier_number, arg_count, ap \
         )
 
-    #define FMT_TID_CASE(_tid, _v, _T, _a) \
-        case _tid: {                       \
-            value._v = va_arg(FMT__VA_LIST_DEREF(ap), _T);    \
-            FMT_PARSE_FS();                \
-            goto _a;                       \
+    #define FMT_TID_CASE(_tid, _v, _T, _a)                 \
+        case _tid: {                                       \
+            value._v = va_arg(FMT__VA_LIST_DEREF(ap), _T); \
+            FMT_PARSE_FS();                                \
+            goto _a;                                       \
         }
 
     switch (type) {
@@ -3895,11 +3902,11 @@ t_fmt_string:
     );
 
 t_fmt_string_take:;
-    const int written = fmt__print_utf8(
+    length = fmt__print_utf8(
         writer, &fs, value.v_fmt_string.data, value.v_fmt_string.size
     );
     free(value.v_fmt_string.data);
-    return written;
+    return length;
 }
 
 int fmt_va_write(

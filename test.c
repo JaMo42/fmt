@@ -693,7 +693,7 @@ su_module(formatting, {
         expect("1'000'000.0", "{:'}", 1000000.0);
     })
 
-    su_test("padding (and width)", {
+    su_test("field width, filling, and alignment", {
         expect("10000", "{:0<5}", 100);
         expect("00100", "{:0>5}", 100);
         expect("0-100", "{:0>5}", -100);
