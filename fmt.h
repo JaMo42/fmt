@@ -2749,11 +2749,9 @@ static int fmt__debug_write_char(
         break;
     }
     #undef O
-    // XXX: not sure if invalid codepoints should also be printed as escape
-    //      sequences
     // TODO: maybe an option to print unprintable ascii characters as "\xhh"
     //       (hex) or "\nnn" (octal)
-    if (iswprint(ch) || ch > FMT_MAX_CODEPOINT) {
+    if (iswprint(ch)) {
         char buf[4];
         const int len = fmt__utf8_encode(ch, buf);
         return writer->write_data(writer, buf, len);
