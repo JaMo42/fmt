@@ -1318,9 +1318,8 @@ static bool fmt__is_valid_codepoint(char32_t codepoint) {
     return !is_surrogate && codepoint <= FMT_MAX_CODEPOINT;
 }
 
-/*
 /// Returns the number of bytes a codepoint takes in UTF-8 representation.
-static int fmt__codepint_utf8_length(char32_t codepoint) {
+static int fmt__codepoint_utf8_length(char32_t codepoint) {
     if (!fmt__is_valid_codepoint(codepoint)) {
         return 3;
     }
@@ -1337,7 +1336,6 @@ static int fmt__codepint_utf8_length(char32_t codepoint) {
         return 4;
     }
 }
-*/
 
 /// Returns the display width of an ascii character.
 static int fmt__ascii_display_width(char ch_) {
@@ -1521,6 +1519,28 @@ static int fmt__utf8_encode(char32_t codepoint, char *buf) {
     }
 }
 
+/// Intermediate buffer for encoding and writing UTF-8 codepoints.
+typedef struct {
+    char data[32];
+    size_t len;
+    int written;
+} fmt__Intermediate_Buffer;
+
+void fmt__ib_flush(fmt__Intermediate_Buffer *buf, fmt_Writer *writer) {
+    writer->write_data(writer, buf->data, buf->len);
+    buf->written += buf->len;
+    buf->len = 0;
+}
+
+void fmt__ib_push(fmt__Intermediate_Buffer *buf, char32_t ch, fmt_Writer *writer) {
+    const int len = fmt__codepoint_utf8_length(ch);
+    if (buf->len + len > sizeof(buf->data)) {
+        fmt__ib_flush(buf, writer);
+    }
+    fmt__utf8_encode(ch, buf->data + buf->len);
+    buf->len += len;
+}
+
 /// `len` is the number of codepoints.
 static int fmt__write_utf8(
     fmt_Writer *restrict writer, const char *restrict str, int len
@@ -1542,22 +1562,23 @@ static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
 static int fmt__write_utf16(
     fmt_Writer *restrict writer, const char16_t *restrict str, int len
 ) {
-    // TODO: write into intermediate buffer first
-    int written = 0;
+    fmt__Intermediate_Buffer buf = {};
     FMT__ITER_UTF16(str, len, {
-        written += fmt__write_codepoint(writer, codepoint);
+        fmt__ib_push(&buf, codepoint, writer);
     });
-    return written;
+    fmt__ib_flush(&buf, writer);
+    return buf.written;
 }
 
 static int fmt__write_utf32(
     fmt_Writer *restrict writer, const char32_t *restrict str, int len
 ) {
-    int written = 0;
+    fmt__Intermediate_Buffer buf = {};
     while (len --> 0) {
-        written += fmt__write_codepoint(writer, *str++);
+        fmt__ib_push(&buf, *str++, writer);
     }
-    return written;
+    fmt__ib_flush(&buf, writer);
+    return buf.written;
 }
 
 static int fmt__utf8_chars_len(const char *str, int chars) {
@@ -2749,8 +2770,6 @@ static int fmt__debug_write_char(
         break;
     }
     #undef O
-    // TODO: maybe an option to print unprintable ascii characters as "\xhh"
-    //       (hex) or "\nnn" (octal)
     if (iswprint(ch)) {
         char buf[4];
         const int len = fmt__utf8_encode(ch, buf);

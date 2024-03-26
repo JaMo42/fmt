@@ -744,7 +744,7 @@ su_module(formatting, {
         expect("'\\\\'", "{c:?}", '\\');
         expect("'\\''", "{c:?}", '\'');
         expect("'\"'", "{c:?}", '"');
-        expect("'�'", "{c:?}", FMT_MAX_CODEPOINT + 1);
+        expect("'\\U00110000'", "{c:?}", FMT_MAX_CODEPOINT + 1);
 
         // UTF-8
 
