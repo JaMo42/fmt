@@ -961,6 +961,10 @@ static int fmt__max(int a, int b) {
     return a > b ? a : b;
 }
 
+/// Evaluates to `true` if the given given static buffer contains the given
+/// ascii character.
+#define FMT__BUFCHR(_buf, _c) (memchr(_buf, _c, sizeof(_buf) - 1) != NULL)
+
 ////////////////////////////////////////////////////////////////////////////////
 // Type ID functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -1828,7 +1832,7 @@ static void fmt__time_format_specifier_default(
     fmt_Format_Specifier *spec, char field
 ) {
     static const char ZERO_PADDED[] = "HMSIdyYjuwmC";
-    spec->fill = strchr(ZERO_PADDED, field) ? '0' : ' ';
+    spec->fill = FMT__BUFCHR(ZERO_PADDED, field) ? '0' : ' ';
     spec->align = fmt_ALIGN_RIGHT;
     spec->width = 0;
     spec->precision = -1;
@@ -2002,14 +2006,24 @@ static const char * fmt__parse_specifier_after_colon(
         );
     }
     // Grouping
-    // If we have a . the next character must also be a . or the end of the
-    // specifier for it to be the grouping character.  Anything else in this
-    // position must be the grouping character.
-    char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
-    // FIXME: sane condition
-    if (((*format_specifier != '.' && *format_specifier != '}' && *format_specifier != '?')
-         || next == '.' || next == '}' || next == '?')
-        && !(*format_specifier == '?' && next == '}')) {
+    // Clashing characters:
+    // `.` could be precision
+    // `?` could be debug format
+    // `}` could be the end of the specifier
+    static const char ambiguous_characters[] = ".?}";
+    // The same characters can be used for disambiguation if they follow the
+    // current character:
+    // `x.` means this is the group, followed by precision
+    // `x?` means this is the group, followed by debug format
+    // `x}` means this is the group, followed by the end of the specifier
+    static const char disambiguating_next_characters[] = ".?}";
+    // In addition to this, `?}` at this point will be considered as debug
+    // format + end of specifier, and not grouping.
+    const char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
+    if ((!FMT__BUFCHR(ambiguous_characters, *format_specifier)
+         || FMT__BUFCHR(disambiguating_next_characters, next))
+        && !(*format_specifier == '?' && next == '}')
+    ) {
         format_specifier += fmt__utf8_decode(
             (const fmt_char8_t *)format_specifier, &out->group
         );
@@ -4284,6 +4298,8 @@ fmt_String fmt_format_time(
     writer.string.data[writer.string.size] = '\0';
     return writer.string;
 }
+
+#undef FMT__BUFCHR
 
 #endif /* FMT_IMPLEMENTATION */
 
