@@ -67,6 +67,16 @@ typedef uint_least8_t fmt_char8_t;
 #  define FMT_DEFAULT_FLOAT_PRECISION 3
 #endif
 
+#if defined(FMT_BUFFERED_WRITER_CAPACITY) \
+    && ((0 - FMT_BUFFERED_WRITER_CAPACITY - 1) == 1 \
+    && (FMT_BUFFERED_WRITER_CAPACITY + 0) != -2)
+#  error "FMT_BUFFERED_WRITER_CAPACITY is empty, reverting to default"
+#  undef FMT_BUFFERED_WRITER_CAPACITY
+#endif
+#ifndef FMT_BUFFERED_WRITER_CAPACITY
+#  define FMT_BUFFERED_WRITER_CAPACITY 32
+#endif
+
 #define FMT_TIME_DELIM '%'
 
 // Apparently C++ doesn't have this.
@@ -426,54 +436,94 @@ typedef struct {
     int characters_left;
 } fmt_Limited_Writer;
 
+/// Buffers the data written to it and only writes it to the inner writer when
+/// the buffer is full or when flushed.  You must always call `fmt_bw_flush`
+/// after using this writer to ensure all data is written.  Note that the
+/// buffer is rather small and stored in-line inside the struct.
+typedef struct {
+    const fmt_Writer base;
+    union {
+        fmt_Writer *inner;
+        // For the case of being used for writing to a stream, so creating an
+        // extra stream writer and keeping it in scope for the lifetime of the
+        // buffered writer can be avoided.  The `is_stream` flag would likely
+        // be padding bytes anyways so there is no space overhead.
+        FILE *stream;
+    };
+    char buffer[FMT_BUFFERED_WRITER_CAPACITY];
+    uint8_t used;
+    bool is_stream;
+} fmt_Buffered_Writer;
+
+/// Default implementation for the writers `write_str` function which just
+/// calls `write_data` with the string and its length using `strlen`.
+int fmt__write_any_str(fmt_Writer *restrict writer, const char *restrict str);
+
 int fmt__write_stream_byte(fmt_Writer *p_self, char byte);
-int fmt__write_stream_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
-int fmt__write_stream_str (fmt_Writer *restrict p_self, const char *restrict str);
+int fmt__write_stream_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+);
 
 int fmt__write_string_byte(fmt_Writer *p_self, char byte);
-int fmt__write_string_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
-int fmt__write_string_str (fmt_Writer *restrict p_self, const char *restrict str);
+int fmt__write_string_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+);
 
 int fmt__write_alloc_byte(fmt_Writer *p_self, char byte);
-int fmt__write_alloc_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
-int fmt__write_alloc_str (fmt_Writer *restrict p_self, const char *restrict str);
+int fmt__write_alloc_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+);
 
 int fmt__write_metric_byte(fmt_Writer *p_self, char byte);
-int fmt__write_metric_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
-int fmt__write_metric_str (fmt_Writer *restrict p_self, const char *restrict str);
+int fmt__write_metric_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+);
 
 int fmt__write_limited_byte(fmt_Writer *p_self, char byte);
-int fmt__write_limited_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n);
-int fmt__write_limited_str (fmt_Writer *restrict p_self, const char *restrict str);
+int fmt__write_limited_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+);
+
+int fmt__write_buffered_byte(fmt_Writer *p_self, char byte);
+int fmt__write_buffered_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+);
 
 static const fmt_Writer fmt_STREAM_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_stream_byte,
     .write_data = fmt__write_stream_data,
-    .write_str  = fmt__write_stream_str,
+    .write_str = fmt__write_any_str,
 };
 
 static const fmt_Writer fmt_STRING_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_string_byte,
     .write_data = fmt__write_string_data,
-    .write_str  = fmt__write_string_str,
+    .write_str = fmt__write_any_str,
 };
 
 static const fmt_Writer fmt_ALLOC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_alloc_byte,
     .write_data = fmt__write_alloc_data,
-    .write_str  = fmt__write_alloc_str,
+    .write_str = fmt__write_any_str,
 };
 
 static const fmt_Writer fmt_METRIC_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_metric_byte,
     .write_data = fmt__write_metric_data,
-    .write_str  = fmt__write_metric_str,
+    .write_str = fmt__write_any_str,
 };
 
 static const fmt_Writer fmt_LIMITED_WRITER_FUNCTIONS = {
     .write_byte = fmt__write_limited_byte,
     .write_data = fmt__write_limited_data,
-    .write_str  = fmt__write_limited_str,
+    .write_str = fmt__write_any_str,
+
+};
+
+static const fmt_Writer fmt_BUFFERED_WRITER_FUNCTIONS = {
+    .write_byte = fmt__write_buffered_byte,
+    .write_data = fmt__write_buffered_data,
+    .write_str = fmt__write_any_str,
 };
 
 // Note: these macros don't work in C++ because you can't take the address of
@@ -496,6 +546,12 @@ static const fmt_Writer fmt_LIMITED_WRITER_FUNCTIONS = {
         .at = (_string),                     \
         .end = (_string) + (_n),             \
     })
+
+fmt_Buffered_Writer fmt_bw_new(fmt_Writer *inner);
+
+fmt_Buffered_Writer fmt_bw_new_stream(FILE *stream);
+
+void fmt_bw_flush(fmt_Buffered_Writer *bw);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Core functions
@@ -897,6 +953,14 @@ extern void fmt_translate_strftime(
 #ifdef FMT_IMPLEMENTATION
 #undef FMT_IMPLEMENTATION
 
+static int fmt__min(int a, int b) {
+    return a < b ? a : b;
+}
+
+static int fmt__max(int a, int b) {
+    return a > b ? a : b;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Type ID functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -1006,6 +1070,10 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
 // Writers
 ////////////////////////////////////////////////////////////////////////////////
 
+int fmt__write_any_str(fmt_Writer *restrict writer, const char *restrict str) {
+    return writer->write_data(writer, str, strlen(str));
+}
+
 int fmt__write_stream_byte(fmt_Writer *p_self, char byte) {
     fmt_Stream_Writer *self = (fmt_Stream_Writer*)p_self;
     fputc(byte, self->stream);
@@ -1015,13 +1083,6 @@ int fmt__write_stream_byte(fmt_Writer *p_self, char byte) {
 int fmt__write_stream_data(fmt_Writer *restrict p_self, const char *restrict data, size_t n) {
     fmt_Stream_Writer *self = (fmt_Stream_Writer*)p_self;
     return (int)fwrite(data, 1, n, self->stream);
-}
-
-int fmt__write_stream_str(fmt_Writer *restrict p_self, const char *restrict str) {
-    fmt_Stream_Writer *self = (fmt_Stream_Writer*)p_self;
-    // fputs doesn't give use the number of bytes written.
-    const size_t len = strlen(str);
-    return (int)fwrite(str, 1, len, self->stream);
 }
 
 
@@ -1056,12 +1117,6 @@ int fmt__write_string_data(
     return n;
 }
 
-int fmt__write_string_str (
-    fmt_Writer *restrict p_self, const char *restrict str
-) {
-    return fmt__write_string_data(p_self, str, strlen(str));
-}
-
 
 
 static void fmt__string_will_append(fmt_String *str, size_t amount) {
@@ -1094,10 +1149,6 @@ int fmt__write_alloc_data(
     return n;
 }
 
-int fmt__write_alloc_str(fmt_Writer *restrict p_self, const char *restrict str) {
-    return fmt__write_alloc_data(p_self, str, strlen(str));
-}
-
 
 
 // fmt__write_metric_byte and fmt__write_metric_data are defined after the
@@ -1121,10 +1172,75 @@ int fmt__write_limited_byte(fmt_Writer *p_self, char byte) {
 
 // fmt__write_limited_data is defined after the unicode utilities.
 
-int fmt__write_limited_str (
+
+
+static inline int fmt__bw_write_inner_data(
+    fmt_Buffered_Writer *bw, const char *data, size_t n
+) {
+    if (bw->is_stream) {
+        return (int)fwrite(data, 1, n, bw->stream);
+    } else {
+        return bw->inner->write_data(
+            bw->inner, data, n
+        );
+    }
+}
+
+int fmt__write_buffered_byte(fmt_Writer *p_self, char byte) {
+    fmt_Buffered_Writer *self = (fmt_Buffered_Writer *)p_self;
+    if (self->used == sizeof(self->buffer)) {
+        fmt_bw_flush(self);
+    }
+    self->buffer[self->used++] = byte;
+    return 1;
+}
+
+int fmt__write_buffered_data(
+    fmt_Writer *restrict p_self, const char *restrict data, size_t n
+) {
+    fmt_Buffered_Writer *self = (fmt_Buffered_Writer *)p_self;
+    if ((size_t)self->used + n > sizeof(self->buffer)) {
+        fmt_bw_flush(self);
+        if (n >= sizeof(self->buffer)) {
+            return fmt__bw_write_inner_data(self, data, n);
+        }
+    }
+    memcpy(self->buffer + self->used, data, n);
+    self->used += n;
+    return n;
+}
+
+int fmt__write_buffered_str (
     fmt_Writer *restrict p_self, const char *restrict str
 ) {
-    return fmt__write_limited_data(p_self, str, strlen(str));
+    return fmt__write_buffered_data(p_self, str, strlen(str));
+}
+
+fmt_Buffered_Writer fmt_bw_new(fmt_Writer *inner) {
+    return (fmt_Buffered_Writer){
+        .base = fmt_BUFFERED_WRITER_FUNCTIONS,
+        .inner = inner,
+        .buffer = {},
+        .used = 0,
+        .is_stream = false,
+    };
+}
+
+fmt_Buffered_Writer fmt_bw_new_stream(FILE *stream) {
+    return (fmt_Buffered_Writer){
+        .base = fmt_BUFFERED_WRITER_FUNCTIONS,
+        .stream = stream,
+        .buffer = {},
+        .used = 0,
+        .is_stream = true,
+    };
+}
+
+void fmt_bw_flush(fmt_Buffered_Writer *bw) {
+    if (bw->used) {
+        fmt__bw_write_inner_data(bw, bw->buffer, bw->used);
+        bw->used = 0;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1519,6 +1635,8 @@ static int fmt__utf8_encode(char32_t codepoint, char *buf) {
     }
 }
 
+// Not sure if this should stay not that I moved to `fmt_Buffered_Writer`
+// for buffering which does not require any modifications to existing code.
 /// Intermediate buffer for encoding and writing UTF-8 codepoints.
 typedef struct {
     char data[32];
@@ -1532,7 +1650,9 @@ void fmt__ib_flush(fmt__Intermediate_Buffer *buf, fmt_Writer *writer) {
     buf->len = 0;
 }
 
-void fmt__ib_push(fmt__Intermediate_Buffer *buf, char32_t ch, fmt_Writer *writer) {
+void fmt__ib_push(
+    fmt__Intermediate_Buffer *buf, char32_t ch, fmt_Writer *writer
+) {
     const int len = fmt__codepoint_utf8_length(ch);
     if (buf->len + len > sizeof(buf->data)) {
         fmt__ib_flush(buf, writer);
@@ -1647,14 +1767,6 @@ int fmt__write_metric_data(
     self->characters += width_and_length.second;
     self->width += width_and_length.first;
     return n;
-}
-
-static int fmt__min(int a, int b) {
-    return a < b ? a : b;
-}
-
-static int fmt__max(int a, int b) {
-    return a > b ? a : b;
 }
 
 int fmt__write_limited_data(
@@ -3974,11 +4086,8 @@ int fmt__std_print(
     int arg_count,
     ...
 ) {
-    fmt_Stream_Writer swriter = {
-        .base = fmt_STREAM_WRITER_FUNCTIONS,
-        .stream = stream,
-    };
-    fmt_Writer *writer = (fmt_Writer *)&swriter;
+    fmt_Buffered_Writer bwriter = fmt_bw_new_stream(stream);
+    fmt_Writer *writer = (fmt_Writer *)&bwriter;
     va_list ap;
     va_start(ap, arg_count);
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
@@ -3988,6 +4097,7 @@ int fmt__std_print(
     if (newline) {
         writer->write_byte(writer, '\n');
     }
+    fmt_bw_flush(&bwriter);
 #ifdef FMT_LOCKED_DEFAULT_PRINTERS
     mtx_unlock(&fmt__print_mutex);
 #endif
@@ -4097,12 +4207,10 @@ int fmt_va_fprint(
     int arg_count,
     va_list ap
 ) {
-    fmt_Stream_Writer swriter = {
-        .base = fmt_STREAM_WRITER_FUNCTIONS,
-        .stream = stream,
-    };
+    fmt_Buffered_Writer swriter = fmt_bw_new_stream(stream);
     fmt_Writer *writer = (fmt_Writer *)&swriter;
     const int written = fmt_va_write(writer, format, arg_count, ap);
+    fmt_bw_flush(&swriter);
     return written;
 }
 

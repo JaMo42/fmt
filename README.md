@@ -84,6 +84,10 @@ If a macro has a values its default is given in [ ], otherwise it is not defined
 
     Delimiter for embedded time format strings and indicator for parameterized time format strings.
 
+- `FMT_BUFFERED_WRITER_CAPACITY` [`32`]
+
+    Number of bytes buffered by `fmt_Buffered_Writer`.
+
 ## Format string format
 
 In the format string *replacement fields* are enclosed in curly braces (`{}`).
@@ -226,6 +230,10 @@ otherwise it will print an error message with source location and abort the prog
 ```c
 void fmt_init_threading();
 void fmt_translate_strftime(const char *strftime, char *translated, int size);
+
+fmt_Buffered_Writer fmt_bw_new(fmt_Writer *inner);
+fmt_Buffered_Writer fmt_bw_new_stream(FILE *stream);
+void fmt_bw_flush(fmt_Buffered_Writer *bw);
 ```
 
 ### Time functions
@@ -302,6 +310,18 @@ The `long double` type is not supported.
 1. These will also include `[const] wchar_t *` and due to compiler implementation details may also match various types of integer pointers.
 1. If you pass a character literal like `'a'` you need to cast it to a `char` as character literals are integers.
 1. `char8_t`, `char16_t`, `char32_t`, and `wchar_t` are supported but are not distinct types so they will be interpreted as integers by default.  Use the `c` conversion specifier to interpret any integer as a Unicode codepoint.
+
+## Buffering
+
+While the implementation does try to reduce writer calls when trivial it does not generally make any special efforts to do so.
+In order to reduce potentially expensive writes `fmt_Buffered_Writer` can be used, which wraps another writer and buffers the output.
+
+`fmt_bw_new(writer)` creates a buffered writer wrapping another writer, `fmt_bw_new_stream(stream)` creates a buffered writer wrapping a stream writer for the given stream.
+After finishing using the writer, `fmt_bw_flush` must be used to ensure remaining buffered data is written.
+
+Internally this is used for the standard output, standard error, and file printing functions, as file IO and especially printing to the terminal are the main concern for slow write calls that one may want to reduce the frequency of.
+
+Note that the buffer is stored in-line in the `fmt_Buffered_Writer` structure, so using large values for `FMT_BUFFERED_WRITER_CAPACITY` could cause issues, especially since the internal uses will always be on the stack which cannot be changed.
 
 ## More examples
 
