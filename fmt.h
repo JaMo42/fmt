@@ -3438,6 +3438,10 @@ static int fmt__print_pointer(
     fmt_Format_Specifier *restrict fs,
     const void *restrict ptr
 ) {
+    if (!ptr) {
+        fs->debug = false;
+        return fmt__print_utf8(writer, fs, "(nil)", 5);
+    }
     fs->type = fs->type == 'P' ? 'X' : 'x';
     return fmt__print_int(writer, fs, (uintptr_t)ptr, 0);
 }
