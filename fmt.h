@@ -3871,20 +3871,29 @@ static int fmt__print_specifier(
     switch (type) {
         case fmt__TYPE_STRING:
             value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char *);
-            sign = 0;
             // we could do this after the t_string label but I'll keep it up
             // here for consistency
             FMT_PARSE_FS();
+            if (value.v_pointer == NULL) {
+                goto t_pointer;
+            }
+            sign = 0;
             goto t_string;
         case fmt__TYPE_STRING_16:
             value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char16_t *);
-            sign = 1;
             FMT_PARSE_FS();
+            if (value.v_pointer == NULL) {
+                goto t_pointer;
+            }
+            sign = 1;
             goto t_string;
         case fmt__TYPE_STRING_32:
             value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char32_t *);
-            sign = 2;
             FMT_PARSE_FS();
+            if (value.v_pointer == NULL) {
+                goto t_pointer;
+            }
+            sign = 2;
             goto t_string;
 
         case fmt__TYPE_CHAR:
