@@ -366,26 +366,26 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
 /// "vtable" for writers
 typedef struct fmt_Writer {
     /// Writes a single byte
-    int (*const write_byte)(
+    int (*write_byte)(
         struct fmt_Writer *self, char byte
     );
     /// Writes `n` bytes of `data`
-    int (*const write_data)(
+    int (*write_data)(
         struct fmt_Writer *restrict self, const char *restrict data, size_t n
     );
     /// Writes `str` until a null-byte is encountered
-    int (*const write_str)(
+    int (*write_str)(
         struct fmt_Writer *restrict self, const char *restrict str
     );
 } fmt_Writer;
 
 typedef struct {
-    const fmt_Writer base;
+    fmt_Writer base;
     FILE *stream;
 } fmt_Stream_Writer;
 
 typedef struct {
-    const fmt_Writer base;
+    fmt_Writer base;
     const char *const string;
     char *at;
     const char *const end;
@@ -416,14 +416,14 @@ FMT__STATIC_ASSERT(
 );
 
 typedef struct {
-    const fmt_Writer base;
+    fmt_Writer base;
     fmt_String string;
 } fmt_Allocating_String_Writer;
 
 /// Writer that discards the data written but keeps track of the number of
 /// bytes, number of codepoints, and display width of the data.
 typedef struct {
-    const fmt_Writer base;
+    fmt_Writer base;
     size_t bytes;
     size_t characters;
     size_t width;
@@ -431,7 +431,7 @@ typedef struct {
 
 /// Wraps another writer and only writes up to a limited number of codepoints.
 typedef struct {
-    const fmt_Writer base;
+    fmt_Writer base;
     fmt_Writer *inner;
     int characters_left;
 } fmt_Limited_Writer;
@@ -441,7 +441,7 @@ typedef struct {
 /// after using this writer to ensure all data is written.  Note that the
 /// buffer is rather small and stored in-line inside the struct.
 typedef struct {
-    const fmt_Writer base;
+    fmt_Writer base;
     union {
         fmt_Writer *inner;
         // For the case of being used for writing to a stream, so creating an
@@ -2010,13 +2010,13 @@ static const char * fmt__parse_specifier_after_colon(
     // `.` could be precision
     // `?` could be debug format
     // `}` could be the end of the specifier
-    static const char ambiguous_characters[] = ".?}";
+    static const char ambiguous_characters[] = "}?.";
     // The same characters can be used for disambiguation if they follow the
     // current character:
     // `x.` means this is the group, followed by precision
     // `x?` means this is the group, followed by debug format
     // `x}` means this is the group, followed by the end of the specifier
-    static const char disambiguating_next_characters[] = ".?}";
+    static const char disambiguating_next_characters[] = "}?.";
     // In addition to this, `?}` at this point will be considered as debug
     // format + end of specifier, and not grouping.
     const char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
