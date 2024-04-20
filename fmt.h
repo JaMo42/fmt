@@ -951,7 +951,6 @@ extern void fmt_translate_strftime(
 
 
 #ifdef FMT_IMPLEMENTATION
-#undef FMT_IMPLEMENTATION
 
 static int fmt__min(int a, int b) {
     return a < b ? a : b;
