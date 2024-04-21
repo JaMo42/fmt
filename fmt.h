@@ -3964,35 +3964,24 @@ static int fmt__print_specifier(
     fmt_unreachable("type id value is not one of the enum variants");
 
 t_string:
-    // All string functions have the same general interface and just differ in
-    // in the type of pointer the functions take but since they are all pointers
-    // we can just cast them to be void pointers and choose the functions based
-    // on the kind of string determined in the switch above.
+    #define FMT_STR_KIND(_bytelenfn, _cplenfn, _printfn)      \
+        if (fs.precision < 0) {                               \
+            length = _bytelenfn(value.v_pointer);             \
+        } else {                                              \
+            length = _cplenfn(value.v_pointer, fs.precision); \
+        }                                                     \
+        return _printfn(writer, &fs, value.v_pointer, length)
     if (fs.type == 'p' || fs.type == 'P') {
         goto t_pointer;
     } else {
-        static size_t (*STRLEN_TABLE[])(const void *) = {
-            (size_t (*)(const void *))strlen,
-            (size_t (*)(const void *))fmt__utf16_strlen,
-            (size_t (*)(const void *))fmt__utf32_strlen,
-        };
-        static int (*CHARS_LEN_TABLE[])(const void *, int) = {
-            (int (*)(const void *, int))fmt__utf8_chars_len,
-            (int (*)(const void *, int))fmt__utf16_chars_len,
-            (int (*)(const void *, int))fmt__utf32_chars_len,
-        };
-        static int (*PRINT_TABLE[])(fmt_Writer *, fmt_Format_Specifier *, const void *, int) = {
-            (int (*)(fmt_Writer *, fmt_Format_Specifier *, const void *, int))fmt__print_utf8,
-            (int (*)(fmt_Writer *, fmt_Format_Specifier *, const void *, int))fmt__print_utf16,
-            (int (*)(fmt_Writer *, fmt_Format_Specifier *, const void *, int))fmt__print_utf32,
-        };
-        if (fs.precision < 0) {
-            length = STRLEN_TABLE[(int)sign](value.v_pointer);
-        } else {
-            length = CHARS_LEN_TABLE[(int)sign](value.v_pointer, fs.precision);
+        switch (sign) {
+        case 0: FMT_STR_KIND(strlen, fmt__utf8_chars_len, fmt__print_utf8);
+        case 1: FMT_STR_KIND(fmt__utf16_strlen, fmt__utf16_chars_len, fmt__print_utf16);
+        case 2: FMT_STR_KIND(fmt__utf32_strlen, fmt__utf32_chars_len, fmt__print_utf32);
         }
-        return PRINT_TABLE[(int)sign](writer, &fs, value.v_pointer, length);
+        fmt_unreachable("unexpected string kind: {}", (int)sign);
     }
+    #undef FMT_STR_KIND
 
 t_signed:
     if (value.v_signed < 0) {
