@@ -127,7 +127,7 @@ There are few differences compared to usual implementations to note here:
 
 - `?` enables the debug format, similar to rust.
   In this library this only affects characters and strings, which will be printed with quotation marks and non-printable characters will be escaped.
-  If used together with the alternate form (`#`), no quotation marks are printed.
+  If used together with the alternate form (`#`), no quotation marks are printed, and quotes are not escaped.
 
 ### Embedded time formats
 

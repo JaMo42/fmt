@@ -407,7 +407,7 @@ su_module_d(internal_functions, "internal functions", {
 #ifndef FMT_FAST_DISPLAY_WIDTH
         su_assert_eq(fmt__display_width(u'\u0303'), 0);
 #endif
-        su_assert_eq(fmt__debug_char_width('a'), 1);
+        su_assert_eq(fmt__debug_char_width('a', false), 1);
     })
 
     su_test("float base and exponent", {
@@ -842,6 +842,14 @@ su_module(formatting, {
         expect("  \\n  ", "{:^#6?}", "\n");
         expect("  \\n  ", "{:^#6?}", u"\n");
         expect("  \\n  ", "{:^#6?}", U"\n");
+        expect("\"'", "{:#?}", "\"'");
+        expect("'", "{c:#?}", '\'');
+        expect("\"'", "{:#?}", u"\"'");
+        expect("\"'", "{:#?}", U"\"'");
+        expect("  \"'  ", "{:^#6?}", "\"'");
+        expect("  '  ", "{c:^#5?}", '\'');
+        expect("  \"'  ", "{:^#6?}", u"\"'");
+        expect("  \"'  ", "{:^#6?}", U"\"'");
     })
 })
 

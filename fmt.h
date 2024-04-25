@@ -2797,15 +2797,15 @@ static int fmt__debug_escaped_char_width(char32_t ch, fmt__DebugCharEscapeArgs a
     }
 }
 
-static int fmt__debug_char_width(char32_t ch) {
+static int fmt__debug_char_width(char32_t ch, bool quote) {
     return fmt__debug_escaped_char_width(ch, (fmt__DebugCharEscapeArgs) {
-        .escape_single_quote = true,
+        .escape_single_quote = quote,
         .escape_double_quote = false,
     });
 }
 
 static fmt_Int_Pair fmt__debug_utf8_width_and_length(
-    const char *str, int size, int max_chars_for_width
+    const char *str, int size, int max_chars_for_width, bool quote
 ) {
     int width = 0;
     int length = 0;
@@ -2825,7 +2825,7 @@ static fmt_Int_Pair fmt__debug_utf8_width_and_length(
                 codepoint,
                 (fmt__DebugCharEscapeArgs) {
                     .escape_single_quote = false,
-                    .escape_double_quote = true,
+                    .escape_double_quote = quote,
                 }
             );
         }
@@ -2835,7 +2835,7 @@ static fmt_Int_Pair fmt__debug_utf8_width_and_length(
 }
 
 static fmt_Int_Pair fmt__debug_utf16_width_and_length(
-    const char16_t *str, int size, int max_chars_for_width
+    const char16_t *str, int size, int max_chars_for_width, bool quote
 ) {
     int width = 0;
     int length = 0;
@@ -2851,7 +2851,7 @@ static fmt_Int_Pair fmt__debug_utf16_width_and_length(
                 codepoint,
                 (fmt__DebugCharEscapeArgs) {
                     .escape_single_quote = false,
-                    .escape_double_quote = true,
+                    .escape_double_quote = quote,
                 }
             );
         }
@@ -2860,7 +2860,7 @@ static fmt_Int_Pair fmt__debug_utf16_width_and_length(
     return (fmt_Int_Pair) { width, length };
 }
 
-static int fmt__debug_utf32_width(const char32_t *str, int size) {
+static int fmt__debug_utf32_width(const char32_t *str, int size, bool quote) {
     int width = 0;
     if (size < 0) {
         size = fmt__utf32_strlen(str);
@@ -2870,7 +2870,7 @@ static int fmt__debug_utf32_width(const char32_t *str, int size) {
             *str++,
             (fmt__DebugCharEscapeArgs) {
                 .escape_single_quote = false,
-                .escape_double_quote = true,
+                .escape_double_quote = quote,
             }
         );
     }
@@ -2906,7 +2906,7 @@ static int fmt__debug_write_char(
     }
 }
 
-static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len) {
+static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len, bool quote) {
     #define O(_ch, _) _ch,
     static const char ESCAPE_ME[] = { FMT__DEBUG_ENUM_COMMON_ESCAPES(O) '"' };
     #undef O
@@ -2925,7 +2925,7 @@ static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len) {
             }
             written += fmt__debug_write_char(writer, codepoint, (fmt__DebugCharEscapeArgs) {
                 .escape_single_quote = false,
-                .escape_double_quote = true,
+                .escape_double_quote = quote,
             });
             begin = end + n;
         }
@@ -2938,26 +2938,26 @@ static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len) {
 }
 
 static int fmt__debug_write_utf16(
-    fmt_Writer *restrict writer, const char16_t *restrict str, int len
+    fmt_Writer *restrict writer, const char16_t *restrict str, int len, bool quote
 ) {
     int written = 0;
     FMT__ITER_UTF16(str, len, {
         written += fmt__debug_write_char(writer, codepoint, (fmt__DebugCharEscapeArgs) {
             .escape_single_quote = false,
-            .escape_double_quote = true,
+            .escape_double_quote = quote,
         });
     });
     return written;
 }
 
 static int fmt__debug_write_utf32(
-    fmt_Writer *restrict writer, const char32_t *restrict str, int len
+    fmt_Writer *restrict writer, const char32_t *restrict str, int len, bool quote
 ) {
     int written = 0;
     while (len --> 0) {
         written += fmt__debug_write_char(writer, *str++, (fmt__DebugCharEscapeArgs) {
             .escape_single_quote = false,
-            .escape_double_quote = true,
+            .escape_double_quote = quote,
         });
     }
     return written;
@@ -2977,7 +2977,7 @@ static int fmt__print_utf8(
 ) {
     const fmt_Int_Pair width_and_length = fs->debug
         ? fmt__debug_utf8_width_and_length(
-            string, len, fs->width > 0 ? fs->precision : 0
+            string, len, fs->width > 0 ? fs->precision : 0, !fs->alternate_form
         )
         : fmt__utf8_width_and_length(
             string, len, fs->width > 0 ? fs->precision : 0
@@ -2999,7 +2999,7 @@ static int fmt__print_utf8(
         if (!fs->alternate_form) {
             written += writer->write_byte(writer, '"');
         }
-        written += fmt__debug_write_utf8(writer, string, to_print);
+        written += fmt__debug_write_utf8(writer, string, to_print, !fs->alternate_form);
         if (!fs->alternate_form) {
             written += writer->write_byte(writer, '"');
         }
@@ -3019,7 +3019,7 @@ static int fmt__print_utf16(
 ) {
     const fmt_Int_Pair width_and_length = fs->debug
         ? fmt__debug_utf16_width_and_length(
-            string, len, fs->width > 0 ? fs->precision : 0
+            string, len, fs->width > 0 ? fs->precision : 0, !fs->alternate_form
         )
         : fmt__utf16_width_and_length(
             string, len, fs->width > 0 ? fs->precision : 0
@@ -3041,7 +3041,7 @@ static int fmt__print_utf16(
         if (!fs->alternate_form) {
             written += writer->write_byte(writer, '"');
         }
-        written += fmt__debug_write_utf16(writer, string, to_print);
+        written += fmt__debug_write_utf16(writer, string, to_print, !fs->alternate_form);
         if (!fs->alternate_form) {
             written += writer->write_byte(writer, '"');
         }
@@ -3062,7 +3062,7 @@ static int fmt__print_utf32(
     const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const int width = fs->width > 0
         ? (fs->debug
-            ? overhead + fmt__debug_utf32_width(string, len)
+            ? overhead + fmt__debug_utf32_width(string, len, !fs->alternate_form)
             : fmt__utf32_width(string, len))
         : 0;
 
@@ -3079,7 +3079,7 @@ static int fmt__print_utf32(
         if (!fs->alternate_form) {
             written += writer->write_byte(writer, '"');
         }
-        written += fmt__debug_write_utf32(writer, string, to_print);
+        written += fmt__debug_write_utf32(writer, string, to_print, !fs->alternate_form);
         if (!fs->alternate_form) {
             written += writer->write_byte(writer, '"');
         }
@@ -3096,7 +3096,7 @@ static int fmt__print_char(
 ) {
     const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const int width = (fs->debug
-                       ? overhead + fmt__debug_char_width(ch)
+                       ? overhead + fmt__debug_char_width(ch, !fs->alternate_form)
                        : fmt__display_width(ch));
 
     const fmt_Int_Pair pad = fmt__distribute_padding(
@@ -3110,7 +3110,7 @@ static int fmt__print_char(
             written += writer->write_byte(writer, '\'');
         }
         written += fmt__debug_write_char(writer, ch, (fmt__DebugCharEscapeArgs) {
-            .escape_single_quote = true,
+            .escape_single_quote = !fs->alternate_form,
             .escape_double_quote = false,
         });
         if (!fs->alternate_form) {
