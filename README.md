@@ -35,13 +35,13 @@ int main(void) {
 
 - compile with `-lm` (I don't think I can get rid of this)
 
-- if `FMT_LOCKED_DEFAULT_PRINTERS` is defined, compiling with `-pthread` *may* be neccessary, depending on platform
+- if `FMT_LOCKED_DEFAULT_PRINTERS` is defined, compiling with `-pthread` *may* be necessary, depending on platform
 
 ### Windows
 
 Windows builds only work with clang (gcc not tested), as Microsoft has moved on to C++ and `msvc` is lacking a lot of the newer standard C features.
 
-Unlike on linux no directives need to be defined or libraries linked.
+Unlike on Linux no directives need to be defined or libraries linked.
 
 ---
 
@@ -126,7 +126,8 @@ There are few differences compared to usual implementations to note here:
 - The precision field for strings specifies the number of Unicode codepoints.
 
 - `?` enables the debug format, similar to rust.
-  In this library this only affects charactes and strings, which will be printed with quotation marks and non-printable characters will be escaped.
+  In this library this only affects characters and strings, which will be printed with quotation marks and non-printable characters will be escaped.
+  If used together with the alternate form (`#`), no quotation marks are printed.
 
 ### Embedded time formats
 
@@ -135,7 +136,7 @@ Note: the `%` used in the specification can be changed using the `FMT_TIME_DELIM
 In the format (2), the format string for the time is parameterized and must be
 the next argument after the `tm` value.
 This needs the `%` as a separator between the two opening curly braces as they
-would otherwise be considred an escaped curly bracket.
+would otherwise be considered an escaped curly bracket.
 
 In the format(3), the format string is embedded between the two `%` delimiters.
 
