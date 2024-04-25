@@ -2988,7 +2988,7 @@ static int fmt__print_utf8(
         to_print = fs->precision;
     }
 
-    const int overhead = fs->debug ? 2 : 0;
+    const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const fmt_Int_Pair pad = fmt__distribute_padding(
         fs->width - (width_and_length.first + overhead), fs->align
     );
@@ -2996,9 +2996,13 @@ static int fmt__print_utf8(
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
     if (fs->debug) {
-        written += writer->write_byte(writer, '\"');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '"');
+        }
         written += fmt__debug_write_utf8(writer, string, to_print);
-        written += writer->write_byte(writer, '\"');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '"');
+        }
     } else {
         written += fmt__write_utf8(writer, string, to_print);
     }
@@ -3026,7 +3030,7 @@ static int fmt__print_utf16(
         to_print = fs->precision;
     }
 
-    const int overhead = fs->debug ? 2 : 0;
+    const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const fmt_Int_Pair pad = fmt__distribute_padding(
         fs->width - (width_and_length.first + overhead), fs->align
     );
@@ -3034,9 +3038,13 @@ static int fmt__print_utf16(
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
     if (fs->debug) {
-        written += writer->write_byte(writer, '\"');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '"');
+        }
         written += fmt__debug_write_utf16(writer, string, to_print);
-        written += writer->write_byte(writer, '\"');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '"');
+        }
     } else {
         written += fmt__write_utf16(writer, string, to_print);
     }
@@ -3051,9 +3059,10 @@ static int fmt__print_utf32(
     const char32_t *restrict string,
     int len
 ) {
+    const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const int width = fs->width > 0
         ? (fs->debug
-            ? 2 + fmt__debug_utf32_width(string, len)
+            ? overhead + fmt__debug_utf32_width(string, len)
             : fmt__utf32_width(string, len))
         : 0;
 
@@ -3067,9 +3076,13 @@ static int fmt__print_utf32(
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
     if (fs->debug) {
-        written += writer->write_byte(writer, '\"');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '"');
+        }
         written += fmt__debug_write_utf32(writer, string, to_print);
-        written += writer->write_byte(writer, '\"');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '"');
+        }
     } else {
         written += fmt__write_utf32(writer, string, to_print);
     }
@@ -3081,8 +3094,9 @@ static int fmt__print_utf32(
 static int fmt__print_char(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, char32_t ch
 ) {
+    const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const int width = (fs->debug
-                       ? 2 + fmt__debug_char_width(ch)
+                       ? overhead + fmt__debug_char_width(ch)
                        : fmt__display_width(ch));
 
     const fmt_Int_Pair pad = fmt__distribute_padding(
@@ -3092,12 +3106,16 @@ static int fmt__print_char(
     int written = 0;
     written += fmt__pad(writer, pad.first, fs->fill);
     if (fs->debug) {
-        written += writer->write_byte(writer, '\'');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '\'');
+        }
         written += fmt__debug_write_char(writer, ch, (fmt__DebugCharEscapeArgs) {
             .escape_single_quote = true,
             .escape_double_quote = false,
         });
-        written += writer->write_byte(writer, '\'');
+        if (!fs->alternate_form) {
+            written += writer->write_byte(writer, '\'');
+        }
     } else {
         written += fmt__write_codepoint(writer, ch);
     }

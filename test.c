@@ -833,6 +833,15 @@ su_module(formatting, {
         expect("  \"\\n\"  ", "{:^8?}", "\n");
         expect("  \"\\n\"  ", "{:^8?}", u"\n");
         expect("  \"\\n\"  ", "{:^8?}", U"\n");
+
+        // Alternate format
+
+        expect("\\n", "{:#?}", "\n");
+        expect("\\n", "{c:#?}", '\n');
+        expect("  \\n  ", "{c:^#6?}", '\n');
+        expect("  \\n  ", "{:^#6?}", "\n");
+        expect("  \\n  ", "{:^#6?}", u"\n");
+        expect("  \\n  ", "{:^#6?}", U"\n");
     })
 })
 
