@@ -3982,20 +3982,20 @@ static int fmt__print_specifier(
     fmt_unreachable("type id value is not one of the enum variants");
 
 t_string:
-    #define FMT_STR_KIND(_bytelenfn, _cplenfn, _printfn)      \
-        if (fs.precision < 0) {                               \
-            length = _bytelenfn(value.v_pointer);             \
-        } else {                                              \
-            length = _cplenfn(value.v_pointer, fs.precision); \
-        }                                                     \
-        return _printfn(writer, &fs, value.v_pointer, length)
+    #define FMT_STR_KIND(_type, _bytelenfn, _cplenfn, _printfn)             \
+        if (fs.precision < 0) {                                             \
+            length = _bytelenfn((const _type*)value.v_pointer);             \
+        } else {                                                            \
+            length = _cplenfn((const _type*)value.v_pointer, fs.precision); \
+        }                                                                   \
+        return _printfn(writer, &fs, (const _type*)value.v_pointer, length)
     if (fs.type == 'p' || fs.type == 'P') {
         goto t_pointer;
     } else {
         switch (sign) {
-        case 0: FMT_STR_KIND(strlen, fmt__utf8_chars_len, fmt__print_utf8);
-        case 1: FMT_STR_KIND(fmt__utf16_strlen, fmt__utf16_chars_len, fmt__print_utf16);
-        case 2: FMT_STR_KIND(fmt__utf32_strlen, fmt__utf32_chars_len, fmt__print_utf32);
+        case 0: FMT_STR_KIND(char, strlen, fmt__utf8_chars_len, fmt__print_utf8);
+        case 1: FMT_STR_KIND(char16_t, fmt__utf16_strlen, fmt__utf16_chars_len, fmt__print_utf16);
+        case 2: FMT_STR_KIND(char32_t, fmt__utf32_strlen, fmt__utf32_chars_len, fmt__print_utf32);
         }
         fmt_unreachable("unexpected string kind: {}", (int)sign);
     }

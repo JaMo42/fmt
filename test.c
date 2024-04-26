@@ -408,6 +408,10 @@ su_module_d(internal_functions, "internal functions", {
         su_assert_eq(fmt__display_width(u'\u0303'), 0);
 #endif
         su_assert_eq(fmt__debug_char_width('a', false), 1);
+        su_assert_eq(fmt__debug_char_width('\n', false), 2);
+        su_assert_eq(fmt__debug_char_width('\n', true), 2);
+        su_assert_eq(fmt__debug_char_width('\'', false), 1);
+        su_assert_eq(fmt__debug_char_width('\'', true), 2);
     })
 
     su_test("float base and exponent", {
