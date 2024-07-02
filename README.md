@@ -292,8 +292,9 @@ Type | Default conversion specifier | Valid conversion specifiers
 -|-|-
 `[const] char *` <br> `[const] char8_t *` <br> `[const] char16_t *` <br> `[const] char32_t *` <br> (see note 1) | s | p P s
 `char` (see note 2 and 3) | c | b c d i o x X $
-`signed char` <br> `short` <br> `int` <br> `long` <br> `long long` <br> `unsigned char` <br> `unsigned short` <br> `unsigned` <br> `unsigned long` <br> `unsigned long long`  | d | b c d i o x X $
+`signed char` <br> `short` <br> `int` <br> `long` <br> `long long` <br> `unsigned char` <br> `unsigned short` <br> `unsigned` <br> `unsigned long` <br> `unsigned long long`  | d | b B c i o x X $ (B is bool)
 `float` <br> `double` | F | f F e E g G % $ (see below)
+`bool` | B | B
 `[const] void *` | p | p P
 `[const] struct tm *` | | Cannot have a presentation type due to the different replacement specifier syntax
 Anything else | | p P (see below)
@@ -312,6 +313,7 @@ The `long double` type is not supported.
 1. The `F` specifier will use exponential mode if the exponent is less than -6 or greater than 20 and use decimal by default.
 The `F` specifier was chosen for this so it can be explicity used and not only as the default, but this means that the decimal mode is not case insensitive as exponential and the printf-style general format (tragic loss).
 It also does not change the precision like the printf-style general format does.
+1. Booleans are printed as `true` or `false` by default and as `yes` or `no` with the alternate format (`#` specifier) and are treated as strings.
 
 ## Buffering
 

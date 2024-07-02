@@ -508,6 +508,7 @@ su_module_d(basic_printing, "basic printing", {
         bool f = false;
         expect("true", "{}", t);
         expect("false", "{}", f);
+        expect("true", "{B}", 1 != 2);
     })
 
     su_test("integers", {

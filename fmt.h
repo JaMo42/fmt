@@ -1048,10 +1048,12 @@ static const char *fmt__valid_display_types(fmt_Type_Id type) {
         case fmt__TYPE_UNSIGNED:
         case fmt__TYPE_UNSIGNED_LONG:
         case fmt__TYPE_UNSIGNED_LONG_LONG:
-            return "bcdioxX$";
+            return "bBcdioxX$";
         case fmt__TYPE_FLOAT:
         case fmt__TYPE_DOUBLE:
             return "eEfFgG%$";
+        case fmt__TYPE_BOOL:
+            return "B";
         case fmt__TYPE_STRING:
         case fmt__TYPE_STRING_16:
         case fmt__TYPE_STRING_32:
@@ -4282,6 +4284,9 @@ t_unsigned:
         } else {
             return fmt__print_cash_money(writer, &fs, (double)value.v_unsigned);
         }
+
+    case 'B':
+        return fmt__print_bool(writer, &fs, !!value.v_unsigned);
 
     default:
         return fmt__print_int(writer, &fs, value.v_unsigned, sign);
