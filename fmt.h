@@ -38,6 +38,7 @@
 #  include <langinfo.h>
 #endif
 #include <wctype.h>
+#include <assert.h>
 
 // `char8_t` is only available since C23 but we also want to support C11 so
 // since we need our typedef anyways we never use `char8_t` since we wouldn't
@@ -64,7 +65,7 @@ typedef uint_least8_t fmt_char8_t;
 #  undef FMT_DEFAULT_FLOAT_PRECISION
 #endif
 #ifndef FMT_DEFAULT_FLOAT_PRECISION
-#  define FMT_DEFAULT_FLOAT_PRECISION 3
+#  define FMT_DEFAULT_FLOAT_PRECISION -1
 #endif
 
 #if defined(FMT_BUFFERED_WRITER_CAPACITY) \
@@ -956,10 +957,6 @@ static int fmt__min(int a, int b) {
     return a < b ? a : b;
 }
 
-static int fmt__max(int a, int b) {
-    return a > b ? a : b;
-}
-
 /// Evaluates to `true` if the given given static buffer contains the given
 /// ascii character.
 #define FMT__BUFCHR(_buf, _c) (memchr(_buf, _c, sizeof(_buf) - 1) != NULL)
@@ -1177,7 +1174,7 @@ int fmt__write_limited_byte(fmt_Writer *p_self, char byte) {
 
 
 
-static inline int fmt__bw_write_inner_data(
+static int fmt__bw_write_inner_data(
     fmt_Buffered_Writer *bw, const char *data, size_t n
 ) {
     if (bw->is_stream) {
@@ -1487,6 +1484,11 @@ static int fmt__display_width(char32_t ucs) {
 #  define fmt__display_width fmt__mk_wcwidth
 #endif
 
+// TODO: change display width to consider all ascii characters as 1 wide?
+// This would make it a bit faster, but since the big condition block filters
+// a lot of characters in the first and expression it reall only skips the
+// 0 width checks before.
+
 /// Decodes 1 codepoint from valid UTF-8 data.  Returns the number of bytes the
 /// codepoint uses.
 static int fmt__utf8_decode(
@@ -1638,8 +1640,6 @@ static int fmt__utf8_encode(char32_t codepoint, char *buf) {
     }
 }
 
-// Not sure if this should stay not that I moved to `fmt_Buffered_Writer`
-// for buffering which does not require any modifications to existing code.
 /// Intermediate buffer for encoding and writing UTF-8 codepoints.
 typedef struct {
     char data[32];
@@ -1647,13 +1647,13 @@ typedef struct {
     int written;
 } fmt__Intermediate_Buffer;
 
-void fmt__ib_flush(fmt__Intermediate_Buffer *buf, fmt_Writer *writer) {
+static void fmt__ib_flush(fmt__Intermediate_Buffer *buf, fmt_Writer *writer) {
     writer->write_data(writer, buf->data, buf->len);
     buf->written += buf->len;
     buf->len = 0;
 }
 
-void fmt__ib_push(
+static void fmt__ib_push(
     fmt__Intermediate_Buffer *buf, char32_t ch, fmt_Writer *writer
 ) {
     const int len = fmt__codepoint_utf8_length(ch);
@@ -1662,6 +1662,25 @@ void fmt__ib_push(
     }
     fmt__utf8_encode(ch, buf->data + buf->len);
     buf->len += len;
+}
+
+static void fmt__ib_push_byte(
+    fmt__Intermediate_Buffer *buf, char byte, fmt_Writer *writer
+) {
+    if (buf->len + 1 > sizeof(buf->data)) {
+        fmt__ib_flush(buf, writer);
+    }
+    buf->data[buf->len++] = byte;
+}
+
+static void fmt__ib_push_data(
+    fmt__Intermediate_Buffer *buf, const char *data, size_t n, fmt_Writer *writer
+) {
+    if (buf->len + n > sizeof(buf->data)) {
+        fmt__ib_flush(buf, writer);
+    }
+    memcpy(buf->data + buf->len, data, n);
+    buf->len += n;
 }
 
 /// `len` is the number of codepoints.
@@ -2470,6 +2489,10 @@ FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 4,"00011011");
 FMT_DEFINE_WRITE_DIGITS(fmt__write_digits_2, 4, 64, 8,"00011011");
 #endif
 
+// TODO: this looks interesing, all thought maybe not worth it since speed
+// isn't the ultimate goal for this library:
+// https://github.com/miloyip/itoa-benchmark/blob/master/src/branchlut2.cpp
+
 static const char *fmt__DECIMAL_DIGIT_PAIRS =
     "00010203040506070809"
     "10111213141516171819"
@@ -2591,165 +2614,297 @@ static const fmt_Base* fmt__get_base(char type) {
 // Floating point hell
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Returns the display width of the integer part of a floating point number.
-static int fmt__float_integer_width(double f) {
-    if (f < 10.0) {
-        return 1;
-    }
-    int width = 1;
-    while (f >= 10.0) {
-        ++width;
-        f /= 10.0;
-    }
-    return width;
+// Adapted Grisu2 implementation from:
+// https://github.com/miloyip/dtoa-benchmark/blob/master/src/milo/dtoa_milo.h
+// which had the best results in their benchmark:
+// https://github.com/miloyip/dtoa-benchmark
+
+enum {
+    fmt__DIY_SIGNIFICAND_SIZE = 64,
+    fmt__DBL_SIGNIFICAND_SIZE = 52,
+    fmt__DBL_EXPONENT_BIAS = 0x3ff + fmt__DBL_SIGNIFICAND_SIZE,
+    fmt__DBL_MIN_EXPONENT = -fmt__DBL_EXPONENT_BIAS,
+    fmt__DBL_EXPONENT_MASK = 0x7FF0000000000000ull,
+    fmt__DBL_SIGNIFICAND_MASK = 0x000FFFFFFFFFFFFFull,
+    fmt__DBL_HIDDEN_BIT = 0x0010000000000000ull,
+};
+
+typedef struct {
+    uint64_t f; // Fraction
+    int e; // Exponent
+} fmt__Float;
+
+static fmt__Float fmt__float_new(uint64_t f, int e) {
+    return (fmt__Float) { f, e };
 }
 
-/// Returns the display width of the fraction part of a floating point number.
-static int fmt__float_fraction_width(double f) {
-    double unused;
-    double fraction = f;
-    int width = 0;
+static fmt__Float fmt__float_from_f64(double x) {
+    assert(!isnan(x));
+    assert(!isinf(x));
+    assert(x >= 0.0);
+    uint64_t f, bits;
+    int e, biased_e;
+    memcpy(&bits, &x, sizeof(bits));
+    biased_e = (bits & fmt__DBL_EXPONENT_MASK) >> fmt__DBL_SIGNIFICAND_SIZE;
+    bits &= fmt__DBL_SIGNIFICAND_MASK;
+    if (biased_e != 0) {
+        f = bits | fmt__DBL_HIDDEN_BIT;
+        e = biased_e - fmt__DBL_EXPONENT_BIAS;
+    } else {
+        f = bits;
+        e = fmt__DBL_MIN_EXPONENT + 1;
+    }
+    return fmt__float_new(f, e);
+}
+
+static fmt__Float fmt__float_sub(fmt__Float x, fmt__Float y) {
+    assert(x.e == y.e);
+    assert(x.f >= y.f);
+    return fmt__float_new(x.f - y.f, x.e);
+}
+
+// Note: Standard implementations kept here for reference
+
+static fmt__Float fmt__float_mul(fmt__Float x, fmt__Float y) {
+    const unsigned __int128 p = (unsigned __int128)x.f * y.f;
+    uint64_t h = p >> 64;
+    const uint64_t l = p;
+    if (l & (1ull << 63)) { // rounding
+        ++h;
+    }
+    return fmt__float_new(h, x.e + y.e + 64);
+    //const uint64_t MASK32 = (1ULL << 32) - 1;
+    //uint64_t a, b, c, d, ac, bc, ad, bd, tmp;
+    //fmt__Float r;
+    //a = x.f >> 32; b = x.f & MASK32;
+    //c = y.f >> 32; d = y.f & MASK32;
+    //ac = a * c; bc = b * c; ad = a * d; bd = b * d;
+    //tmp = (bd >> 32) + (ad & MASK32) + (bc & MASK32);
+    //tmp += 1U << 31; // Round
+    //r.f = ac + (ad >> 32) + (bc >> 32) + (tmp >> 32);
+    //r.e = x.e + y.e + 64;
+    //return r;
+}
+
+static fmt__Float fmt__float_normalize(fmt__Float x) {
+    const int s = __builtin_clzll(x.f);
+    return fmt__float_new(x.f << s, x.e - s);
+    //fmt__Float res = x;
+    //while (!(res.f & fmt__DBL_HIDDEN_BIT)) {
+    //    res.f <<= 1;
+    //    --res.e;
+    //}
+    //res.f <<= (fmt__DIY_SIGNIFICAND_SIZE - fmt__DBL_SIGNIFICAND_SIZE - 1);
+    //res.e = res.e - (fmt__DIY_SIGNIFICAND_SIZE - fmt__DBL_SIGNIFICAND_SIZE - 1);
+    //return res;
+}
+
+static fmt__Float fmt__float_normalize_boundary(fmt__Float x) {
+    const int s = __builtin_clzll(x.f);
+    return fmt__float_new(x.f << s, x.e - s);
+    //fmt__Float res = x;
+    //while (!(res.f & (fmt__DBL_HIDDEN_BIT << 1))) {
+    //    res.f <<= 1;
+    //    --res.e;
+    //}
+    //res.f <<= (fmt__DIY_SIGNIFICAND_SIZE - fmt__DBL_SIGNIFICAND_SIZE - 2);
+    //res.e = res.e - (fmt__DIY_SIGNIFICAND_SIZE - fmt__DBL_SIGNIFICAND_SIZE - 2);
+    //return res;
+}
+
+static void fmt__float_normalized_boundaries(fmt__Float x, fmt__Float *minus, fmt__Float *plus) {
+    fmt__Float pl = fmt__float_normalize_boundary(fmt__float_new((x.f << 1) + 1, x.e - 1));
+    fmt__Float mi = (x.f == fmt__DBL_HIDDEN_BIT)
+        ? fmt__float_new((x.f << 2) - 1, x.e - 2)
+        : fmt__float_new((x.f << 1) - 1, x.e - 1);
+    mi.f <<= mi.e - pl.e;
+    mi.e = pl.e;
+    *plus = pl;
+    *minus = mi;
+}
+
+static fmt__Float fmt__cached_power(int e, int *K) {
+    static const uint64_t FRACTIONS[] = {
+        0xfa8fd5a0081c0288ULL, 0xbaaee17fa23ebf76ULL, 0x8b16fb203055ac76ULL,
+        0xcf42894a5dce35eaULL, 0x9a6bb0aa55653b2dULL, 0xe61acf033d1a45dfULL,
+        0xab70fe17c79ac6caULL, 0xff77b1fcbebcdc4fULL, 0xbe5691ef416bd60cULL,
+        0x8dd01fad907ffc3cULL, 0xd3515c2831559a83ULL, 0x9d71ac8fada6c9b5ULL,
+        0xea9c227723ee8bcbULL, 0xaecc49914078536dULL, 0x823c12795db6ce57ULL,
+        0xc21094364dfb5637ULL, 0x9096ea6f3848984fULL, 0xd77485cb25823ac7ULL,
+        0xa086cfcd97bf97f4ULL, 0xef340a98172aace5ULL, 0xb23867fb2a35b28eULL,
+        0x84c8d4dfd2c63f3bULL, 0xc5dd44271ad3cdbaULL, 0x936b9fcebb25c996ULL,
+        0xdbac6c247d62a584ULL, 0xa3ab66580d5fdaf6ULL, 0xf3e2f893dec3f126ULL,
+        0xb5b5ada8aaff80b8ULL, 0x87625f056c7c4a8bULL, 0xc9bcff6034c13053ULL,
+        0x964e858c91ba2655ULL, 0xdff9772470297ebdULL, 0xa6dfbd9fb8e5b88fULL,
+        0xf8a95fcf88747d94ULL, 0xb94470938fa89bcfULL, 0x8a08f0f8bf0f156bULL,
+        0xcdb02555653131b6ULL, 0x993fe2c6d07b7facULL, 0xe45c10c42a2b3b06ULL,
+        0xaa242499697392d3ULL, 0xfd87b5f28300ca0eULL, 0xbce5086492111aebULL,
+        0x8cbccc096f5088ccULL, 0xd1b71758e219652cULL, 0x9c40000000000000ULL,
+        0xe8d4a51000000000ULL, 0xad78ebc5ac620000ULL, 0x813f3978f8940984ULL,
+        0xc097ce7bc90715b3ULL, 0x8f7e32ce7bea5c70ULL, 0xd5d238a4abe98068ULL,
+        0x9f4f2726179a2245ULL, 0xed63a231d4c4fb27ULL, 0xb0de65388cc8ada8ULL,
+        0x83c7088e1aab65dbULL, 0xc45d1df942711d9aULL, 0x924d692ca61be758ULL,
+        0xda01ee641a708deaULL, 0xa26da3999aef774aULL, 0xf209787bb47d6b85ULL,
+        0xb454e4a179dd1877ULL, 0x865b86925b9bc5c2ULL, 0xc83553c5c8965d3dULL,
+        0x952ab45cfa97a0b3ULL, 0xde469fbd99a05fe3ULL, 0xa59bc234db398c25ULL,
+        0xf6c69a72a3989f5cULL, 0xb7dcbf5354e9beceULL, 0x88fcf317f22241e2ULL,
+        0xcc20ce9bd35c78a5ULL, 0x98165af37b2153dfULL, 0xe2a0b5dc971f303aULL,
+        0xa8d9d1535ce3b396ULL, 0xfb9b7cd9a4a7443cULL, 0xbb764c4ca7a44410ULL,
+        0x8bab8eefb6409c1aULL, 0xd01fef10a657842cULL, 0x9b10a4e5e9913129ULL,
+        0xe7109bfba19c0c9dULL, 0xac2820d9623bf429ULL, 0x80444b5e7aa7cf85ULL,
+        0xbf21e44003acdd2dULL, 0x8e679c2f5e44ff8fULL, 0xd433179d9c8cb841ULL,
+        0x9e19db92b4e31ba9ULL, 0xeb96bf6ebadf77d9ULL, 0xaf87023b9bf0ee6bULL,
+    };
+    static const int_fast16_t EXPONENTS[] = {
+        -1220, -1193, -1166, -1140, -1113, -1087, -1060, -1034, -1007,  -980,
+         -954,  -927,  -901,  -874,  -847,  -821,  -794,  -768,  -741,  -715,
+         -688,  -661,  -635,  -608,  -582,  -555,  -529,  -502,  -475,  -449,
+         -422,  -396,  -369,  -343,  -316,  -289,  -263,  -236,  -210,  -183,
+         -157,  -130,  -103,   -77,   -50,   -24,     3,    30,    56,    83,
+          109,   136,   162,   189,   216,   242,   269,   295,   322,   348,
+          375,   402,   428,   455,   481,   508,   534,   561,   588,   614,
+          641,   667,   694,   720,   747,   774,   800,   827,   853,   880,
+          907,   933,   960,   986,  1013,  1039,  1066,
+    };
+    enum {
+        COUNT = sizeof(FRACTIONS) / sizeof(FRACTIONS[0]),
+        STRIDE = 8,
+        FIRST = -348,
+    };
+    const double dk = (-61 - e) * 0.30102999566398114 + 347;
+    int k = (int)dk;
+    if (dk - k > 0.0) {
+        ++k;
+    }
+    const unsigned index = (unsigned)((k / STRIDE) + 1);
+    *K = -(FIRST + (int)(index * STRIDE));
+    assert(index < COUNT);
+    return fmt__float_new(FRACTIONS[index], EXPONENTS[index]);
+}
+
+static void fmt__grisu_round(
+    char *p, int len, uint64_t delta, uint64_t rest, uint64_t ten_kappa, uint64_t wp_w
+) {
+    while (rest < wp_w
+        && delta - rest >= ten_kappa
+        && (rest + ten_kappa < wp_w
+            || wp_w - rest > rest + ten_kappa - wp_w)
+    ) {
+        --p[len - 1];
+        rest += ten_kappa;
+    }
+}
+
+// XXX: same thing as `fmt__unsigned_width_10`, maybe marginally faster because
+// of smaller type.
+static unsigned fmt__decimal_digit_32(uint32_t n) {
+    if (n < 10) return 1;
+    if (n < 100) return 2;
+    if (n < 1000) return 3;
+    if (n < 10000) return 4;
+    if (n < 100000) return 5;
+    if (n < 1000000) return 6;
+    if (n < 10000000) return 7;
+    if (n < 100000000) return 8;
+    if (n < 1000000000) return 9;
+    return 10;
+}
+
+static void fmt__digit_gen(fmt__Float W, fmt__Float Mp, uint64_t delta, char *p, int *len, int *K) {
+    static const uint32_t POW10[] = {
+        1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000
+    };
+    const fmt__Float one = fmt__float_new(1ULL << -Mp.e, Mp.e);
+    const fmt__Float wp_w = fmt__float_sub(Mp, W);
+    uint32_t p1 = Mp.f >> -one.e;
+    uint64_t p2 = Mp.f & (one.f - 1);
+    int kappa = fmt__decimal_digit_32(p1);
+    *len = 0;
+
+    while (kappa > 0) {
+        uint32_t d;
+        switch (kappa) {
+            case 10: d = p1 / 1000000000; p1 %= 1000000000; break;
+            case  9: d = p1 /  100000000; p1 %=  100000000; break;
+            case  8: d = p1 /   10000000; p1 %=   10000000; break;
+            case  7: d = p1 /    1000000; p1 %=    1000000; break;
+            case  6: d = p1 /     100000; p1 %=     100000; break;
+            case  5: d = p1 /      10000; p1 %=      10000; break;
+            case  4: d = p1 /       1000; p1 %=       1000; break;
+            case  3: d = p1 /        100; p1 %=        100; break;
+            case  2: d = p1 /         10; p1 %=         10; break;
+            case  1: d = p1;              p1 =           0; break;
+            default: __builtin_unreachable();
+        }
+        if (d || *len) {
+            p[(*len)++] = '0' + d;
+        }
+        --kappa;
+        const uint64_t tmp = ((uint64_t)p1 << -one.e) + p2;
+        if (tmp <= delta) {
+            *K += kappa;
+            fmt__grisu_round(p, *len, delta, tmp, (uint64_t)POW10[kappa] << -one.e, wp_w.f);
+            return;
+        }
+    }
     for (;;) {
-        fraction = modf(fraction, &unused);
-        if (fraction == (double)(int)fraction) {
-            break;
+        p2 *= 10;
+        delta *= 10;
+        const char d = (char)(p2 >> -one.e);
+        if (d || *len) {
+            p[(*len)++] = '0' + d;
         }
-        fraction *= 10.0;
-        ++width;
-    }
-    // no fraction, we want a single zero so width 1
-    if (!width) {
-        width = 1;
-    };
-    return width;
-}
-
-/// Mostly equivalent to `fmt__write_digits_10` but also handles leading zeros,
-/// and does not handle `n` being `0`.
-static int fmt__write_float_integer_digits_as_integer(
-    fmt_Writer *writer, unsigned long long n, int len
-) {
-    char buf[20];
-    memset(buf, '0', len);
-    char *p = buf + len - 2;
-    int idx;
-    while (n >= 10) {
-        idx = (n % 100) * 2;
-        memcpy(p, fmt__DECIMAL_DIGIT_PAIRS + idx, 2);
-        p -= 2;
-        n /= 100;
-    }
-    if (n) {
-        p[1] = '0' + n;
-    }
-    return writer->write_data(writer, buf, len);
-}
-
-static int fmt__write_float_integer_digits(
-    fmt_Writer *writer,
-    double f,
-    int length,
-    char32_t groupchar,
-    int group_interval
-) {
-    if (f < (double)UINT64_MAX) {
-        if (group_interval) {
-            return fmt__write_digits_10_grouped(writer, (uint64_t)f, length, groupchar);
-        } else {
-            return fmt__write_digits_10(writer, (uint64_t)f, length);
+        p2 &= one.f - 1;
+        --kappa;
+        if (p2 < delta) {
+            *K += kappa;
+            fmt__grisu_round(p, *len, delta, p2, one.f, wp_w.f * POW10[-kappa]);
+            return;
         }
     }
-    double div;
-    int digit;
-    int group_at = length % (group_interval + 1);
-    int written = length;
-    while (length--) {
-        div = pow(10.0, length);
-        digit = (int)fmod(f / div, 10.0);
-        writer->write_byte(writer, '0' + digit);
-        // We don't check if group_interval is 0 here but since group_at starts
-        // at 0 in that case we need to overflow it and then go all the way
-        // back to 0 until it matters.
-        if (--group_at == 0) {
-            writer->write_byte(writer, groupchar);
-            ++written;
-            group_at = group_interval;
-        }
-    }
-    return written;
 }
 
-static int fmt__write_float_fraction_digits(
-    fmt_Writer *writer,
-    double f,
-    int length
-) {
-    char buf[32];
-    int pairindex;
-    const char *bufend = buf + sizeof(buf);
-    char *p = buf;
+static void fmt__float_grisu2(fmt__Float v, char *buffer, int *length, int *K) {
+    fmt__Float w_m, w_p;
+    fmt__float_normalized_boundaries(v, &w_m, &w_p);
+    const fmt__Float c_mk = fmt__cached_power(w_p.e, K);
+    const fmt__Float W = fmt__float_mul(fmt__float_normalize(v), c_mk);
+    fmt__Float Wp = fmt__float_mul(w_p, c_mk);
+    fmt__Float Wm = fmt__float_mul(w_m, c_mk);
+    ++Wm.f;
+    --Wp.f;
+    fmt__digit_gen(W, Wp, Wp.f - Wm.f, buffer, length, K);
+}
+
+static void fmt__grisu2(double v, char *buffer, int *length, int *K) {
+    const fmt__Float f = fmt__float_from_f64(v);
+    fmt__float_grisu2(f, buffer, length, K);
+}
+
+static char* fmt__float_digits_buf(void) {
+    static FMT__THREAD_LOCAL char buffer[128];
+    return buffer;
+}
+
+static int fmt__write_float_exponent(fmt_Writer *writer, int K) {
     int written = 0;
-    double unused;
-    if (length % 2) {
-        f *= 10.0;
-        writer->write_byte(writer, '0' + (int)f % 10);
+    if (K < 0) {
+        writer->write_byte(writer, '-');
         ++written;
-        f -= (int)f;
-        --length;
+        K = -K;
     }
-    while (length) {
-        length -= 2;
-        pairindex = (int)(f * 100.0) * 2;
-        f = modf(f * 100.0, &unused);
-        memcpy(p, fmt__DECIMAL_DIGIT_PAIRS + pairindex, 2);
-        p += 2;
-        if (p == bufend) {
-            written += writer->write_data(writer, buf, 32);
-            p = buf;
-        }
-    }
-    if (p != buf) {
-        written += writer->write_data(writer, buf, p - buf);
+    if (K >= 100) {
+        written += writer->write_byte(writer, '0' + (char)(K / 100));
+        K %= 100;
+        const char* d = fmt__DECIMAL_DIGIT_PAIRS + K * 2;
+        written += writer->write_data(writer, d, 2);
+    } else if (K >= 10) {
+        const char* d = fmt__DECIMAL_DIGIT_PAIRS + K * 2;
+        written += writer->write_data(writer, d, 2);
+    } else {
+        written += writer->write_byte(writer, '0' + (char)K);
     }
     return written;
-}
-
-static void fmt__get_base_and_exponent(
-    double f, double *restrict base, int *restrict exponent
-) {
-    // The iterative version is faster (only tested on 1 machine) but is bound
-    // by the value of `d` so for large values we need to fall back to the math
-    // solution.
-    if (f > 0x1p66) {
-        *exponent = (int)log10(f);
-        *base = f / pow(10.0, *exponent);
-        return;
-    }
-    double negate = 1.0;
-    if (f < 0.0) {
-        negate = -1.0;
-        f = -f;
-    }
-    int exp = 0;
-    unsigned long long d = 1;
-    if (f < 1.0) {
-        for (; f * d < 1.0; d *= 10, --exp) {}
-        f *= d;
-    } else if (f >= 10.0) {
-        for (; f / d >= 10.0; d *= 10, ++exp) {}
-        f /= d;
-    }
-    *base = f * negate;
-    *exponent = exp;
-}
-
-/// Returns 10^exp.  exp may not exceed 19.
-static double fmt__pow10(int exp) {
-    static const double TABLE[] = {
-        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
-        1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19,
-    };
-    return TABLE[exp];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3208,87 +3363,183 @@ static int fmt__print_bool(
         }                                               \
     } while(0)
 
-typedef struct {
-    int integer_width;
-    int fraction_width;
-    char sign;
-    bool no_fraction;
-    fmt_Int_Pair padding;
-} fmt__Print_Float_State;
+#define FMT__GRISU2(_v) \
+    char sign; \
+    if (_v< 0.0) { \
+        sign = '-'; \
+        _v = -_v; \
+    } else if (fs->sign == fmt_SIGN_ALWAYS) { \
+        sign = '+'; \
+    } else if (fs->sign == fmt_SIGN_SPACE) { \
+        sign = ' '; \
+    } else { \
+        sign = 0; \
+    } \
+    char *const buf = fmt__float_digits_buf(); \
+    int len, k; \
+    fmt__grisu2(_v, buf, &len, &k); \
+    const int kk = k + len; \
 
-#define FMT__WRITE_FLOAT_INIT(_state, _fs, _flt, _width_overhead)        \
-    do {                                                                 \
-        _state.sign = 0;                                                 \
-        if (_flt < 0.0) {                                                \
-            _state.sign = '-';                                           \
-            _flt = -_flt;                                                \
-        } else if (_fs->sign == fmt_SIGN_ALWAYS) {                       \
-            _state.sign = '+';                                           \
-        } else if (_fs->sign == fmt_SIGN_SPACE) {                        \
-            _state.sign = ' ';                                           \
-        }                                                                \
-        _state.integer_width = fmt__float_integer_width(_flt);           \
-        if (_fs->precision < 0) {                                        \
-            _fs->precision = FMT_DEFAULT_FLOAT_PRECISION;                \
-        }                                                                \
-        if (_fs->precision == 0) {                                       \
-            _state.no_fraction = true;                                   \
-            _state.fraction_width = 0;                                   \
-        } else {                                                         \
-            _state.no_fraction = false;                                  \
-            if (_fs->precision < 0) {                                    \
-                _state.fraction_width = fmt__float_fraction_width(_flt); \
-            } else {                                                     \
-                _state.fraction_width = _fs->precision;                  \
-                if (_state.fraction_width < 20) {                        \
-                    const double p = fmt__pow10(_state.fraction_width);  \
-                    _flt = round(_flt * p) / p;                          \
-                }                                                        \
-            }                                                            \
-        }                                                                \
-        const int total_width = (!!_state.sign + _state.integer_width    \
-                                 + (!_state.no_fraction                  \
-                                    * (1 + _state.fraction_width))       \
-                                 + (_width_overhead));                   \
-        _state.padding = fmt__distribute_padding(                        \
-            _fs->width - total_width, _fs->align                         \
-        );                                                               \
-    } while (0)
+static int fmt__float_decimal_integer_width(int intlen, char sign, char32_t thousep) {
+    return (!!sign
+            + intlen
+            + (thousep ? (intlen - 1) / 3 * fmt__display_width(thousep) : 0));
+}
 
-#define FMT__WRITE_FLOAT_INTEGER(_writer, _state, _fs, _flt)                    \
-    do {                                                                        \
-        written += fmt__write_float_integer_digits(                             \
-            _writer, _flt, _state.integer_width, _fs->group, _fs->group ? 3 : 0 \
-        );                                                                      \
-    } while (0)
+static int fmt__float_exponential_width(char sign, int len, bool fraction, int exp) {
+    return (
+        !!sign
+        // Either 1.234e45 or 1e23, 1 here is either the decimal point or the single digit
+        + 1 + len * fraction
+        + 1 // 'e'
+        + (exp < 0)
+        + fmt__decimal_digit_32(exp)
+    );
+}
 
-#define FMT__WRITE_FLOAT_FRACTION(_writer, _state, _fs, _flt)           \
-    do {                                                                \
-        double unused, fraction = modf(_flt, &unused);                  \
-        if (_state.fraction_width < 20) {                               \
-            const uint64_t as_int = round(                              \
-                fraction * fmt__pow10(_state.fraction_width)            \
-            );                                                          \
-            if (as_int == 0) {                                          \
-                /* fmt__write_digits_10 can't give us multiple zeros */ \
-                static const char zeros[19] = {                         \
-                    '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',   \
-                    '0' ,'0', '0', '0', '0', '0', '0', '0', '0'         \
-                };                                                      \
-                written += _writer->write_data(                         \
-                    _writer, zeros, _state.fraction_width               \
-                );                                                      \
-            } else {                                                    \
-                written += fmt__write_float_integer_digits_as_integer(  \
-                    _writer, as_int, _state.fraction_width              \
-                );                                                      \
-            }                                                           \
-        } else {                                                        \
-            written += fmt__write_float_fraction_digits(                \
-                _writer, fraction, _state.fraction_width                \
-            );                                                          \
-        }                                                               \
-    } while (0)
+static int fmt__write_float_decimal_integer(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int len,
+    int intlen,
+    int k,
+    int kk,
+    char32_t thousep
+) {
+    if (kk < 0) {
+        writer->write_byte(writer, '0');
+        return 1;
+    } else if (k < 0) {
+        if (thousep && intlen > 3) {
+            return fmt__write_grouped(writer, buf, intlen, thousep, 3);
+        } else {
+            return writer->write_data(writer, buf, intlen);
+        }
+    } else {
+        if (thousep && intlen > 3) {
+            int i, g, t;
+            char thousepbuf[4];
+            fmt__Intermediate_Buffer ibuf = {};
+            t = fmt__utf8_encode(thousep, thousepbuf);
+            g = 3 - ((intlen - 1) % 3);
+            // We know we have at least 1 digit so can write this outside of
+            // the loop and always write the thousands separator after it.
+            fmt__ib_push_byte(&ibuf, buf[0], writer);
+            for (i = 1; i < len; ++i, ++g) {
+                if (g == 3) {
+                    fmt__ib_push_data(&ibuf, thousepbuf, t, writer);
+                    g = 0;
+                }
+                fmt__ib_push_byte(&ibuf, buf[i], writer);
+            }
+            for (; i < intlen; ++i, ++g) {
+                if (g == 3) {
+                    fmt__ib_push_data(&ibuf, thousepbuf, t, writer);
+                    g = 0;
+                }
+                fmt__ib_push_byte(&ibuf, '0', writer);
+            }
+            fmt__ib_flush(&ibuf, writer);
+            return ibuf.written;
+        } else {
+            int written = writer->write_data(writer, buf, len);
+            written += fmt__pad(writer, k, '0');
+            return written;
+        }
+    }
+}
+
+static int fmt__write_float_decimal_fraction(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int len,
+    int intlen,
+    int real_fraclen,
+    int fraclen,
+    int k,
+    int kk
+) {
+    int written = 0;
+    if (kk < 0) {
+        written += fmt__pad(writer, -kk, '0');
+        written += writer->write_data(writer, buf, len);
+    } else if (k < 0) {
+        if (fraclen > real_fraclen) {
+            written += writer->write_data(writer, buf + intlen, real_fraclen);
+            written += fmt__pad(writer, fraclen - real_fraclen, '0');
+        } else {
+            written += writer->write_data(writer, buf + intlen, fraclen);
+        }
+    } else {
+        written += fmt__pad(writer, fraclen, '0');
+    }
+    return written;
+}
+
+static int fmt__write_float_exponential_fraction(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int real_fraclen,
+    int fraclen
+) {
+    int written = 1;
+    writer->write_byte(writer, '.');
+    if (fraclen > real_fraclen) {
+        written += writer->write_data(writer, buf + 1, real_fraclen);
+        written += fmt__pad(writer, fraclen - real_fraclen, '0');
+    } else {
+        written += writer->write_data(writer, buf + 1, fraclen);
+    }
+    return written;
+}
+
+static int fmt__print_float_decimal_impl(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const char *restrict buf,
+    const int len,
+    const int k,
+    const int kk,
+    const char sign,
+    const char suffix
+) {
+    const int intlen = kk > 0 ? kk : 1;
+    const int real_fraclen = k < 0 ? -k : 1;
+    const int fraclen = fs->precision >= 0 ? fs->precision : real_fraclen;
+    const bool fraction = fs->precision > 0 || (fs->precision == -1 && k < 0);
+
+    const int total_width = (fmt__float_decimal_integer_width(intlen, sign, fs->group)
+                             + fraction * (1 + fraclen)
+                             + !!suffix);
+    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
+
+    int written = 0;
+    if (fs->align != fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, pad.first, fs->fill);
+    }
+    if (sign) {
+        written += writer->write_byte(writer, sign);
+    }
+    if (fs->align == fmt_ALIGN_AFTER_SIGN) {
+        written += fmt__pad(writer, pad.first, fs->fill);
+    }
+    written += fmt__write_float_decimal_integer(writer, buf, len, intlen, k, kk, fs->group);
+    if (fraction) {
+#ifdef FMT_NO_LANGINFO
+        written += writer->write_byte(writer, '.');
+#else
+        written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
+#endif
+        written += fmt__write_float_decimal_fraction(
+            writer, buf, len, intlen, real_fraclen, fraclen, k, kk
+        );
+    }
+    if (suffix) {
+        written += writer->write_byte(writer, suffix);
+    }
+    written += fmt__pad(writer, pad.second, fs->fill);
+    return written;
+}
 
 static int fmt__print_float_decimal(
     fmt_Writer *restrict writer,
@@ -3297,32 +3548,48 @@ static int fmt__print_float_decimal(
     char suffix
 ) {
     FMT__FLOAT_SPECIAL_CASES();
-    fmt__Print_Float_State state;
-    FMT__WRITE_FLOAT_INIT(state, fs, f, !!suffix);
+    if (fs->precision < 0) {
+        fs->precision = FMT_DEFAULT_FLOAT_PRECISION;
+    }
+    FMT__GRISU2(f);
+    return fmt__print_float_decimal_impl(writer, fs, buf, len, k, kk, sign, suffix);
+}
+
+static int fmt__print_float_exponential_impl(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const char *restrict buf,
+    const int len,
+    const int kk,
+    const char sign
+) {
+    const int real_fraclen = len - 1;
+    const int fraclen = fs->precision >= 0 ? fs->precision : real_fraclen;
+    const bool fraction = fs->precision > 0 || (fs->precision == -1 && fraclen);
+    const int exp = kk - 1;
+    const int total_width = fmt__float_exponential_width(sign, len, fraction, exp);
+    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
 
     int written = 0;
     if (fs->align != fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, state.padding.first, fs->fill);
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
-    if (state.sign) {
-        written += writer->write_byte(writer, state.sign);
+    if (sign) {
+        written += writer->write_byte(writer, sign);
     }
     if (fs->align == fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, state.padding.first, fs->fill);
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
-    FMT__WRITE_FLOAT_INTEGER(writer, state, fs, f);
-    if (!state.no_fraction) {
-#ifdef FMT_NO_LANGINFO
-        written += writer->write_byte(writer, '.');
-#else
-        written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
-#endif
-        FMT__WRITE_FLOAT_FRACTION(writer, state, fs, f);
+    writer->write_byte(writer, buf[0]);
+    ++written;
+    if (fraction) {
+        written += fmt__write_float_exponential_fraction(
+            writer, buf, real_fraclen, fraclen
+        );
     }
-    if (suffix) {
-        written += writer->write_byte(writer, suffix);
-    }
-    written += fmt__pad(writer, state.padding.second, fs->fill);
+    written += writer->write_byte(writer, 'e');
+    written += fmt__write_float_exponent(writer, exp);
+    written += fmt__pad(writer, pad.second, fs->fill);
     return written;
 }
 
@@ -3330,61 +3597,46 @@ static int fmt__print_float_exponential(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
-    fmt__Print_Float_State state;
-    int exp;
-    fmt__get_base_and_exponent(f, &f, &exp);
-    const int exp_width = fmt__unsigned_width_10(exp < 0 ? -exp : exp);
-    const int width_overhead = 2 + fmt__max(2, exp_width);
-    FMT__WRITE_FLOAT_INIT(state, fs, f, width_overhead);
-
-    int written = 0;
-    if (fs->align != fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, state.padding.first, fs->fill);
+    if (fs->precision < 0) {
+        fs->precision = FMT_DEFAULT_FLOAT_PRECISION;
     }
-    if (state.sign) {
-        written += writer->write_byte(writer, state.sign);
-    }
-    if (fs->align == fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, state.padding.first, fs->fill);
-    }
-    FMT__WRITE_FLOAT_INTEGER(writer, state, fs, f);
-    if (!state.no_fraction) {
-#ifdef FMT_NO_LANGINFO
-        written += writer->write_byte(writer, '.');
-#else
-        written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
-#endif
-        FMT__WRITE_FLOAT_FRACTION(writer, state, fs, f);
-    }
-    if (exp < 0) {
-        written += writer->write_data(writer, "e-0", 2 + (exp_width == 1));
-        written += fmt__write_digits_10(writer, -exp, exp_width);
-    } else {
-        written += writer->write_data(writer, "e+0", 2 + (exp_width == 1));
-        written += fmt__write_digits_10(writer, exp, exp_width);
-    }
-    written += fmt__pad(writer, state.padding.second, fs->fill);
-    return written;
+    FMT__GRISU2(f);
+    return fmt__print_float_exponential_impl(writer, fs, buf, len, kk, sign);
 }
 
-static int fmt__print_float_dynamic(
+static int fmt__print_float_default(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
-    int exp;
-    double base;
-    fmt__get_base_and_exponent(f, &base, &exp);
+    FMT__GRISU2(f);
+    if (-6 < kk && kk <= 21) {
+        return fmt__print_float_decimal_impl(writer, fs, buf, len, k, kk, sign, 0);
+    } else {
+        return fmt__print_float_exponential_impl(writer, fs, buf, len, kk, sign);
+    }
+}
+
+static int fmt__print_float_general(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
+) {
+    FMT__FLOAT_SPECIAL_CASES();
+    FMT__GRISU2(f);
+    const int exp = kk - 1;
+    // TODO: implement writing here to avoid double grisu2 call
     if (fs->precision < 0) {
         fs->precision = 6;
     } else if (fs->precision == 0) {
         fs->precision = 1;
     }
     if (exp < -4 || exp >= fs->precision) {
-        fs->precision -= fmt__float_integer_width(base);
-        return fmt__print_float_exponential(writer, fs, f);
+        --fs->precision;
+        //return fmt__print_float_exponential(writer, fs, f);
+        return fmt__print_float_exponential_impl(writer, fs, buf, len, kk, sign);
     } else {
-        fs->precision -= fmt__float_integer_width(f);
-        return fmt__print_float_decimal(writer, fs, f, 0);
+        const int intlen = kk > 0 ? kk : 1;
+        fs->precision -= intlen;
+        //return fmt__print_float_decimal(writer, fs, f, 0);
+        return fmt__print_float_decimal_impl(writer, fs, buf, len, k, kk, sign, 0);
     }
 }
 
@@ -3405,49 +3657,57 @@ static int fmt__print_cash_money(
         fs->precision = 2;
     }
     const int currency_width = fmt__utf8_width_and_length(symstr + 1, -1, -1).first;
-    fmt__Print_Float_State state;
-    FMT__WRITE_FLOAT_INIT(state, fs, f, currency_width - (symstr[0] == '.'));
+    FMT__GRISU2(f);
+    const int intlen = kk > 0 ? kk : 1;
+    const int real_fraclen = k < 0 ? -k : 1;
+    const int fraclen = fs->precision >= 0 ? fs->precision : real_fraclen;
+    const bool fraction = fs->precision > 0 || (fs->precision == -1 && k < 0);
+
+    const int total_width = (fmt__float_decimal_integer_width(intlen, sign, fs->group)
+                             + fraction * (1 + fraclen)
+                             + currency_width - (symstr[0] == '.'));
+    const fmt_Int_Pair pad = fmt__distribute_padding(fs->width - total_width, fs->align);
 
     int written = 0;
     if (fs->align != fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, state.padding.first, fs->fill);
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
     // Shopify's Polaris design guidelines say: "Always place the negative
     // symbol before the currency and amount in either format".
     // (https://polaris.shopify.com/foundations/formatting-localized-currency)
-    if (state.sign) {
-        written += writer->write_byte(writer, state.sign);
+    if (sign) {
+        written += writer->write_byte(writer, sign);
     }
     // Not sure if this padding should be before or after the currency symbol
     if (fs->align == fmt_ALIGN_AFTER_SIGN) {
-        written += fmt__pad(writer, state.padding.first, fs->fill);
+        written += fmt__pad(writer, pad.first, fs->fill);
     }
     if (symstr[0] == '-') {
         written += writer->write_str(writer, symstr + 1);
     }
-    FMT__WRITE_FLOAT_INTEGER(writer, state, fs, f);
+    written += fmt__write_float_decimal_integer(writer, buf, len, intlen, k, kk, fs->group);
     if (symstr[0] == '.') {
         written += writer->write_str(writer, symstr + 1);
-    } else {
-#ifdef FMT_NO_LANGINFO
-        written += writer->write_byte(writer, '.');
-#else
-        written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
-#endif
     }
-    if (!state.no_fraction) {
-        FMT__WRITE_FLOAT_FRACTION(writer, state, fs, f);
+    if (fraction) {
+        if (symstr[0] != '.') {
+#ifdef FMT_NO_LANGINFO
+            written += writer->write_byte(writer, '.');
+#else
+            written += writer->write_str(writer, nl_langinfo(RADIXCHAR));
+#endif
+        }
+        written += fmt__write_float_decimal_fraction(
+            writer, buf, len, intlen, real_fraclen, fraclen, k, kk
+        );
     }
     if (symstr[0] == '+') {
         written += writer->write_str(writer, symstr + 1);
     }
-    written += fmt__pad(writer, state.padding.second, fs->fill);
+    written += fmt__pad(writer, pad.second, fs->fill);
     return written;
 }
 
-#undef FMT__WRITE_FLOAT_FRACTION
-#undef FMT__WRITE_FLOAT_INTEGER
-#undef FMT__WRITE_FLOAT_INIT
 #undef FMT__FLOAT_SPECIAL_CASES
 
 static int fmt__print_pointer(
@@ -4033,8 +4293,10 @@ t_pointer:
 t_float:
     switch (fs.type) {
     case 0:
-    case 'f':
     case 'F':
+        return fmt__print_float_default(writer, &fs, value.v_float);
+
+    case 'f':
         return fmt__print_float_decimal(writer, &fs, value.v_float, 0);
 
     case '%':
@@ -4046,7 +4308,7 @@ t_float:
 
     case 'g':
     case 'G':
-        return fmt__print_float_dynamic(writer, &fs, value.v_float);
+        return fmt__print_float_general(writer, &fs, value.v_float);
 
     case '$':
         return fmt__print_cash_money(writer, &fs, value.v_float);

@@ -414,22 +414,6 @@ su_module_d(internal_functions, "internal functions", {
         su_assert_eq(fmt__debug_char_width('\'', true), 2);
     })
 
-    su_test("float base and exponent", {
-        double f;
-        double base;
-        double control_base;
-        int exp;
-        int control_exp;
-        for (int i = 0; i <= 100; ++i) {
-            f = pow(2.0, i);
-            control_exp = (int)log10(f);
-            control_base = f / pow(10.0, control_exp);
-            fmt__get_base_and_exponent(f, &base, &exp);
-            su_assert_eq(exp, control_exp);
-            su_assert_eq(base, control_base);
-        }
-    })
-
     su_test("utf8 encode and decode", {
         // ENCODE
         char data[4];
@@ -454,24 +438,6 @@ su_module_d(internal_functions, "internal functions", {
         ) {
             su_assert_eq(fmt__utf8_decode(c->data, &codepoint), c->size);
             su_assert_eq(codepoint, c->codepoint);
-        }
-    })
-
-    su_test("float part widths", {
-        int expected = 0;
-        su_assert_eq(fmt__float_integer_width(0.0), 1);
-        for (int i = 1; i <= 1000000; i *= 10) {
-            ++expected;
-            su_assert_eq(fmt__float_integer_width((double)i), expected);
-        }
-        expected = 0;
-        for (int i = 1; i <= 1000000; i *= 10) {
-            if (i == 1) {
-                su_assert_eq(fmt__float_fraction_width(1.0 / i), 1);
-            } else {
-                su_assert_eq(fmt__float_fraction_width(1.0 / i), expected);
-            }
-            ++expected;
         }
     })
 
@@ -572,9 +538,10 @@ su_module_d(basic_printing, "basic printing", {
     })
 
     su_test("floats", {
-        expect("3.1410000000000000142108547152020037174224853515625", "{}", 3.141);
+        expect("3.141", "{}", 3.141);
         expect("0.0123456789", "{:.10}", 0.0123456789);
         expect("-3.141", "{:.3}", -3.141);
+        expect("73786976294838210000", "{}", 0x1p66);
         expect("inf", "{}", INFINITY);
         expect("INF", "{F}", INFINITY);
         expect("nan", "{}", NAN);
@@ -584,21 +551,28 @@ su_module_d(basic_printing, "basic printing", {
         expect("-nan", "{}", -NAN);
         expect("-NAN", "{F}", -NAN);
         expect("inf", "{}", HUGE_VAL);
-        expect("1.0e+00", "{e}", 1.0);
-        expect("1.0e+03", "{e}", 1000.0);
-        expect("1.0e-02", "{e}", 0.01);
-        // Currently gives this: 7.378697629483820463747179019264876842498779296875e19
-        //expect("7.3786976294838206464e19", "{e}", 0x1p66);
+        expect("1e0", "{e}", 1.0);
+        expect("1e3", "{e}", 1000.0);
+        expect("1e-2", "{e}", 0.01);
+        expect("7.378697629483821e19", "{e}", 0x1p66);
         expect("12.000%", "{%:.3}", 0.12);
         expect("12.30000%", "{%:.5}", 0.123);
         expect("50%", "{%:.0}", 0.5);
         expect("3.14159", "{g}", 3.14159265359);
         expect("314.159", "{g}", 314.159265359);
         expect("31415.9", "{g}", 31415.9265359);
-        expect("3.14159e+06", "{g}", 3141592.65359);
-        expect("3.14159e+08", "{g}", 314159265.359);
+        expect("3.14159e6", "{g}", 3141592.65359);
+        expect("3.14159e8", "{g}", 314159265.359);
         expect("$3.14", "{$}", 3.141);
         expect("-$1.00", "{$}", -1.0);
+        expect("1e-10", "{}", 1e-10);
+        expect("1e-7", "{}", 1e-7);
+        expect("0.000001", "{}", 1e-6);
+        expect("10", "{}", 1e1);
+        expect("10000000000", "{}", 1e10);
+        expect("100000000000000000000", "{}", 1e20);
+        expect("1e21", "{}", 1e21);
+        expect("1e100", "{}", 1e100);
     })
 
     su_test("pointers", {
@@ -648,10 +622,11 @@ su_module(formatting, {
         expect("  123  ", "{:^7}", 123);
         expect("-   123", "{:=7}", -123);
         expect("  true  ", "{:^8}", (bool)true);
-        expect("  2.0  ", "{:^7}", 2.0);
-        expect("2.0e+02    ", "{e:<11}", 200.0);
-        expect("    2.0e+02", "{e:>11}", 200.0);
-        expect("  2.0e+02  ", "{e:^11}", 200.0);
+        expect("   2   ", "{:^7}", 2.0);
+        expect("  2.1  ", "{:^7}", 2.1);
+        expect("2e2      ", "{e:<9}", 200.0);
+        expect("      2e2", "{e:>9}", 200.0);
+        expect("   2e2   ", "{e:^9}", 200.0);
         expect("$1.20    ", "{$:<9}", 1.2);
         expect("    $1.20", "{$:>9}", 1.2);
         expect("  $1.20  ", "{$:^9}", 1.2);
@@ -661,7 +636,7 @@ su_module(formatting, {
     su_test("precision", {
         expect("3.141000", "{:.6}", 3.141);
         expect("3", "{:.0}", 3.141);
-        expect("1.2e+03", "{e:.1}", 1234.0);
+        expect("1.2e3", "{e:.1}", 1234.0);
         expect("inf", "{:.1}", INFINITY);
         expect("java", "{:.4}", "javascript");
         expect("안녕", "{:.2}", "안녕하세요");
@@ -670,10 +645,10 @@ su_module(formatting, {
         expect("t", "{:.1}", (bool)true);
         expect("3.14", "{g:.3}", 3.14159265359);
         expect("314", "{g:.3}", 314.159265359);
-        expect("3.14e+04", "{g:.3}", 31415.9265359);
-        expect("3.14e+06", "{g:.3}", 3141592.65359);
-        expect("3.14e+08", "{g:.3}", 314159265.359);
-        expect("3e+08", "{g:.0}", 314159265.359);
+        expect("3.14e4", "{g:.3}", 31415.9265359);
+        expect("3.14e6", "{g:.3}", 3141592.65359);
+        expect("3.14e8", "{g:.3}", 314159265.359);
+        expect("3e8", "{g:.0}", 314159265.359);
     })
 
     su_test("grouping", {
@@ -689,12 +664,14 @@ su_module(formatting, {
         #endif
         expect("777'644", "{o:'}", 0777644);
         expect("1ä000", "{:ä}", 1000);
-        expect("1.0", "{:'}", 1.0);
-        expect("100.0", "{:'}", 100.0);
-        expect("1'000.0", "{:'}", 1000.0);
-        expect("10'000.0", "{:'}", 10000.0);
-        expect("100'000.0", "{:'}", 100000.0);
-        expect("1'000'000.0", "{:'}", 1000000.0);
+        expect("1", "{:'}", 1.0);
+        expect("100", "{:'}", 100.0);
+        expect("1'000", "{:'}", 1000.0);
+        expect("10'000", "{:'}", 10000.0);
+        expect("100'000", "{:'}", 100000.0);
+        expect("1'000'000", "{:'}", 1000000.0);
+        expect("  1'000", "{:>7'}", 1000);
+        expect("  1'000", "{:>7'}", 1000.0);
     })
 
     su_test("field width, filling, and alignment", {
@@ -705,7 +682,7 @@ su_module(formatting, {
         expect("-0100", "{:0=5}", -100);
         expect("- 100", "{:=5}", -100);
         expect("  2  ", "{:^5.0}", 2.0);
-        expect("-   2.0", "{:=7}", -2.0);
+        expect("-     2", "{:=7}", -2.0);
         expect("äääabc", "{:ä>6}", "abc");
         expect("äääabc", "{:{}>6}", "abc", u'ä');
         expect("  1.234", "{:>7.}", 1234);
@@ -733,8 +710,8 @@ su_module(formatting, {
     su_test("signing", {
         expect("+123", "{:+}", 123);
         expect(" 123", "{: }", 123);
-        expect("+2.0", "{:+}", 2.0);
-        expect(" 2.0", "{: }", 2.0);
+        expect("+2", "{:+}", 2.0);
+        expect(" 2", "{: }", 2.0);
         expect("+$1.20", "{$:+}", 1.2);
         expect(" $1.20", "{$: }", 1.2);
     })

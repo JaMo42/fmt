@@ -1,6 +1,6 @@
 CC ?= gcc
 CFLAGS ?= -Wall -Wextra -std=gnu11
-LDFLAGS = -lm
+LDFLAGS =
 
 CXX ?= g++
 CXXFLAGS ?= -Wall -Wextra -D_DEFAULT_SOURCE -std=c++11

@@ -33,8 +33,6 @@ int main(void) {
 
 - `_DEFAULT_SOURCE` to be defined
 
-- compile with `-lm` (I don't think I can get rid of this)
-
 - if `FMT_LOCKED_DEFAULT_PRINTERS` is defined, compiling with `-pthread` *may* be necessary, depending on platform
 
 ### Windows
@@ -64,9 +62,9 @@ If a macro has a values its default is given in [ ], otherwise it is not defined
     `fmt_init_threading()` must be called before any of these functions are used.
     Note that you can still use `fmt_init_threading()` if this is not defined in which case it will just do nothing.
 
-- `FMT_DEFAULT_FLOAT_PRECISION` [`3`]
+- `FMT_DEFAULT_FLOAT_PRECISION` [`-1`]
 
-    Number of digits to appear after the radix character for floating point conversions, if not specified by the format string.
+    Number of digits to appear after the radix character for floating point conversions, if not specified by the format string.  If `-1`, all available digits are written and if the fraction is zero it is omitted.
 
 - `FMT_BIN_GROUP_NIBBLES`
 
@@ -295,7 +293,7 @@ Type | Default conversion specifier | Valid conversion specifiers
 `[const] char *` <br> `[const] char8_t *` <br> `[const] char16_t *` <br> `[const] char32_t *` <br> (see note 1) | s | p P s
 `char` (see note 2 and 3) | c | b c d i o x X $
 `signed char` <br> `short` <br> `int` <br> `long` <br> `long long` <br> `unsigned char` <br> `unsigned short` <br> `unsigned` <br> `unsigned long` <br> `unsigned long long`  | d | b c d i o x X $
-`float` <br> `double` | f | f F e E g G % $
+`float` <br> `double` | F | f F e E g G % $ (see below)
 `[const] void *` | p | p P
 `[const] struct tm *` | | Cannot have a presentation type due to the different replacement specifier syntax
 Anything else | | p P (see below)
@@ -311,6 +309,9 @@ The `long double` type is not supported.
 1. These will also include `[const] wchar_t *` and due to compiler implementation details may also match various types of integer pointers.
 1. If you pass a character literal like `'a'` you need to cast it to a `char` as character literals are integers.
 1. `char8_t`, `char16_t`, `char32_t`, and `wchar_t` are supported but are not distinct types so they will be interpreted as integers by default.  Use the `c` conversion specifier to interpret any integer as a Unicode codepoint.
+1. The `F` specifier will use exponential mode if the exponent is less than -6 or greater than 20 and use decimal by default.
+The `F` specifier was chosen for this so it can be explicity used and not only as the default, but this means that the decimal mode is not case insensitive as exponential and the printf-style general format (tragic loss).
+It also does not change the precision like the printf-style general format does.
 
 ## Buffering
 
