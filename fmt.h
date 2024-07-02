@@ -2613,7 +2613,7 @@ static const fmt_Base* fmt__get_base(char type) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Floating point hell
+// Floating point functions
 ////////////////////////////////////////////////////////////////////////////////
 
 // Adapted Grisu2 implementation from:
@@ -2812,7 +2812,9 @@ static unsigned fmt__decimal_digit_32(uint32_t n) {
     return 10;
 }
 
-static void fmt__digit_gen(fmt__Float W, fmt__Float Mp, uint64_t delta, char *p, int *len, int *K) {
+static void fmt__digit_gen(
+    fmt__Float W, fmt__Float Mp, uint64_t delta, char *p, int *len, int *K
+) {
     static const uint32_t POW10[] = {
         1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000
     };
@@ -2905,6 +2907,119 @@ static int fmt__write_float_exponent(fmt_Writer *writer, int K) {
         written += writer->write_data(writer, d, 2);
     } else {
         written += writer->write_byte(writer, '0' + (char)K);
+    }
+    return written;
+}
+
+static int fmt__float_decimal_integer_width(int intlen, char sign, char32_t thousep) {
+    return (!!sign
+            + intlen
+            + (thousep ? (intlen - 1) / 3 * fmt__display_width(thousep) : 0));
+}
+
+static int fmt__float_exponential_width(char sign, int len, bool fraction, int exp) {
+    return (
+        !!sign
+        // Either 1.234e45 or 1e23, 1 here is either the decimal point or the single digit
+        + 1 + len * fraction
+        + 1 // 'e'
+        + (exp < 0)
+        + fmt__decimal_digit_32(exp)
+    );
+}
+
+static int fmt__write_float_decimal_integer(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int len,
+    int intlen,
+    int k,
+    int kk,
+    char32_t thousep
+) {
+    if (kk < 0) {
+        writer->write_byte(writer, '0');
+        return 1;
+    } else if (k < 0) {
+        if (thousep && intlen > 3) {
+            return fmt__write_grouped(writer, buf, intlen, thousep, 3);
+        } else {
+            return writer->write_data(writer, buf, intlen);
+        }
+    } else {
+        if (thousep && intlen > 3) {
+            int i, g, t;
+            char thousepbuf[4];
+            fmt__Intermediate_Buffer ibuf = {};
+            t = fmt__utf8_encode(thousep, thousepbuf);
+            g = 3 - ((intlen - 1) % 3);
+            // We know we have at least 1 digit so can write this outside of
+            // the loop and always write the thousands separator after it.
+            fmt__ib_push_byte(&ibuf, buf[0], writer);
+            for (i = 1; i < len; ++i, ++g) {
+                if (g == 3) {
+                    fmt__ib_push_data(&ibuf, thousepbuf, t, writer);
+                    g = 0;
+                }
+                fmt__ib_push_byte(&ibuf, buf[i], writer);
+            }
+            for (; i < intlen; ++i, ++g) {
+                if (g == 3) {
+                    fmt__ib_push_data(&ibuf, thousepbuf, t, writer);
+                    g = 0;
+                }
+                fmt__ib_push_byte(&ibuf, '0', writer);
+            }
+            fmt__ib_flush(&ibuf, writer);
+            return ibuf.written;
+        } else {
+            int written = writer->write_data(writer, buf, len);
+            written += fmt__pad(writer, k, '0');
+            return written;
+        }
+    }
+}
+
+static int fmt__write_float_decimal_fraction(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int len,
+    int intlen,
+    int real_fraclen,
+    int fraclen,
+    int k,
+    int kk
+) {
+    int written = 0;
+    if (kk < 0) {
+        written += fmt__pad(writer, -kk, '0');
+        written += writer->write_data(writer, buf, len);
+    } else if (k < 0) {
+        if (fraclen > real_fraclen) {
+            written += writer->write_data(writer, buf + intlen, real_fraclen);
+            written += fmt__pad(writer, fraclen - real_fraclen, '0');
+        } else {
+            written += writer->write_data(writer, buf + intlen, fraclen);
+        }
+    } else {
+        written += fmt__pad(writer, fraclen, '0');
+    }
+    return written;
+}
+
+static int fmt__write_float_exponential_fraction(
+    fmt_Writer *restrict writer,
+    const char *restrict buf,
+    int real_fraclen,
+    int fraclen
+) {
+    int written = 1;
+    writer->write_byte(writer, '.');
+    if (fraclen > real_fraclen) {
+        written += writer->write_data(writer, buf + 1, real_fraclen);
+        written += fmt__pad(writer, fraclen - real_fraclen, '0');
+    } else {
+        written += writer->write_data(writer, buf + 1, fraclen);
     }
     return written;
 }
@@ -3365,135 +3480,22 @@ static int fmt__print_bool(
         }                                               \
     } while(0)
 
-#define FMT__GRISU2(_v) \
-    char sign; \
-    if (_v< 0.0) { \
-        sign = '-'; \
-        _v = -_v; \
-    } else if (fs->sign == fmt_SIGN_ALWAYS) { \
-        sign = '+'; \
-    } else if (fs->sign == fmt_SIGN_SPACE) { \
-        sign = ' '; \
-    } else { \
-        sign = 0; \
-    } \
+#define FMT__GRISU2(_v)                        \
+    char sign;                                 \
+    if (_v< 0.0) {                             \
+        sign = '-';                            \
+        _v = -_v;                              \
+    } else if (fs->sign == fmt_SIGN_ALWAYS) {  \
+        sign = '+';                            \
+    } else if (fs->sign == fmt_SIGN_SPACE) {   \
+        sign = ' ';                            \
+    } else {                                   \
+        sign = 0;                              \
+    }                                          \
     char *const buf = fmt__float_digits_buf(); \
-    int len, k; \
-    fmt__grisu2(_v, buf, &len, &k); \
-    const int kk = k + len; \
-
-static int fmt__float_decimal_integer_width(int intlen, char sign, char32_t thousep) {
-    return (!!sign
-            + intlen
-            + (thousep ? (intlen - 1) / 3 * fmt__display_width(thousep) : 0));
-}
-
-static int fmt__float_exponential_width(char sign, int len, bool fraction, int exp) {
-    return (
-        !!sign
-        // Either 1.234e45 or 1e23, 1 here is either the decimal point or the single digit
-        + 1 + len * fraction
-        + 1 // 'e'
-        + (exp < 0)
-        + fmt__decimal_digit_32(exp)
-    );
-}
-
-static int fmt__write_float_decimal_integer(
-    fmt_Writer *restrict writer,
-    const char *restrict buf,
-    int len,
-    int intlen,
-    int k,
-    int kk,
-    char32_t thousep
-) {
-    if (kk < 0) {
-        writer->write_byte(writer, '0');
-        return 1;
-    } else if (k < 0) {
-        if (thousep && intlen > 3) {
-            return fmt__write_grouped(writer, buf, intlen, thousep, 3);
-        } else {
-            return writer->write_data(writer, buf, intlen);
-        }
-    } else {
-        if (thousep && intlen > 3) {
-            int i, g, t;
-            char thousepbuf[4];
-            fmt__Intermediate_Buffer ibuf = {};
-            t = fmt__utf8_encode(thousep, thousepbuf);
-            g = 3 - ((intlen - 1) % 3);
-            // We know we have at least 1 digit so can write this outside of
-            // the loop and always write the thousands separator after it.
-            fmt__ib_push_byte(&ibuf, buf[0], writer);
-            for (i = 1; i < len; ++i, ++g) {
-                if (g == 3) {
-                    fmt__ib_push_data(&ibuf, thousepbuf, t, writer);
-                    g = 0;
-                }
-                fmt__ib_push_byte(&ibuf, buf[i], writer);
-            }
-            for (; i < intlen; ++i, ++g) {
-                if (g == 3) {
-                    fmt__ib_push_data(&ibuf, thousepbuf, t, writer);
-                    g = 0;
-                }
-                fmt__ib_push_byte(&ibuf, '0', writer);
-            }
-            fmt__ib_flush(&ibuf, writer);
-            return ibuf.written;
-        } else {
-            int written = writer->write_data(writer, buf, len);
-            written += fmt__pad(writer, k, '0');
-            return written;
-        }
-    }
-}
-
-static int fmt__write_float_decimal_fraction(
-    fmt_Writer *restrict writer,
-    const char *restrict buf,
-    int len,
-    int intlen,
-    int real_fraclen,
-    int fraclen,
-    int k,
-    int kk
-) {
-    int written = 0;
-    if (kk < 0) {
-        written += fmt__pad(writer, -kk, '0');
-        written += writer->write_data(writer, buf, len);
-    } else if (k < 0) {
-        if (fraclen > real_fraclen) {
-            written += writer->write_data(writer, buf + intlen, real_fraclen);
-            written += fmt__pad(writer, fraclen - real_fraclen, '0');
-        } else {
-            written += writer->write_data(writer, buf + intlen, fraclen);
-        }
-    } else {
-        written += fmt__pad(writer, fraclen, '0');
-    }
-    return written;
-}
-
-static int fmt__write_float_exponential_fraction(
-    fmt_Writer *restrict writer,
-    const char *restrict buf,
-    int real_fraclen,
-    int fraclen
-) {
-    int written = 1;
-    writer->write_byte(writer, '.');
-    if (fraclen > real_fraclen) {
-        written += writer->write_data(writer, buf + 1, real_fraclen);
-        written += fmt__pad(writer, fraclen - real_fraclen, '0');
-    } else {
-        written += writer->write_data(writer, buf + 1, fraclen);
-    }
-    return written;
-}
+    int len, k;                                \
+    fmt__grisu2(_v, buf, &len, &k);            \
+    const int kk = k + len;
 
 static int fmt__print_float_decimal_impl(
     fmt_Writer *restrict writer,
@@ -3624,7 +3626,6 @@ static int fmt__print_float_general(
     FMT__FLOAT_SPECIAL_CASES();
     FMT__GRISU2(f);
     const int exp = kk - 1;
-    // TODO: implement writing here to avoid double grisu2 call
     if (fs->precision < 0) {
         fs->precision = 6;
     } else if (fs->precision == 0) {
@@ -3632,12 +3633,10 @@ static int fmt__print_float_general(
     }
     if (exp < -4 || exp >= fs->precision) {
         --fs->precision;
-        //return fmt__print_float_exponential(writer, fs, f);
         return fmt__print_float_exponential_impl(writer, fs, buf, len, kk, sign);
     } else {
         const int intlen = kk > 0 ? kk : 1;
         fs->precision -= intlen;
-        //return fmt__print_float_decimal(writer, fs, f, 0);
         return fmt__print_float_decimal_impl(writer, fs, buf, len, k, kk, sign, 0);
     }
 }
@@ -3711,6 +3710,7 @@ static int fmt__print_cash_money(
 }
 
 #undef FMT__FLOAT_SPECIAL_CASES
+#undef FMT__GRISU2
 
 static int fmt__print_pointer(
     fmt_Writer *restrict writer,
