@@ -1132,13 +1132,14 @@ int fmt__write_string_data(
 static void fmt__string_will_append(fmt_String *str, size_t amount) {
     const size_t min_cap = str->size + amount;
     if (min_cap > str->capacity) {
-        const size_t target_cap = str->capacity * 15 / 10;
+        const size_t target_cap = str->capacity * 3 / 2;
         const size_t new_cap = target_cap >= min_cap ? target_cap : min_cap;
         char *const new_buf = (char *)realloc(str->data, new_cap + 1);
         if (NULL == new_buf) {
             fmt_panic("string allocation failed");
         }
         str->data = new_buf;
+        str->capacity = new_cap;
     }
 }
 
