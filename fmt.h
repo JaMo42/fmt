@@ -548,6 +548,14 @@ static const fmt_Writer fmt_BUFFERED_WRITER_FUNCTIONS = {
         .end = (_string) + (_n),             \
     })
 
+fmt_Stream_Writer fmt_fw_new(FILE *stream);
+
+fmt_String_Writer fmt_sw_new(char *string, size_t n);
+
+fmt_Allocating_String_Writer fmt_aw_new();
+
+fmt_String fmt_aw_finish(fmt_Allocating_String_Writer writer);
+
 fmt_Buffered_Writer fmt_bw_new(fmt_Writer *inner);
 
 fmt_Buffered_Writer fmt_bw_new_stream(FILE *stream);
@@ -1216,6 +1224,41 @@ int fmt__write_buffered_str (
     fmt_Writer *restrict p_self, const char *restrict str
 ) {
     return fmt__write_buffered_data(p_self, str, strlen(str));
+}
+
+fmt_Stream_Writer fmt_fw_new(FILE *stream) {
+    return (fmt_Stream_Writer){
+        .base = fmt_STREAM_WRITER_FUNCTIONS,
+        .stream = stream,
+    };
+}
+
+fmt_String_Writer fmt_sw_new(char *string, size_t n) {
+    return (fmt_String_Writer){
+        .base = fmt_STRING_WRITER_FUNCTIONS,
+        .string = string,
+        .at = string,
+        .end = string + n,
+    };
+}
+
+fmt_Allocating_String_Writer fmt_aw_new() {
+    enum { INIT_CAP = 16 };
+    return (fmt_Allocating_String_Writer){
+        .base = fmt_ALLOC_WRITER_FUNCTIONS,
+        .string = (fmt_String) {
+            .data = (char *)malloc(INIT_CAP + 1),
+            .size = 0,
+            .capacity = INIT_CAP,
+        },
+    };
+}
+
+fmt_String fmt_aw_finish(fmt_Allocating_String_Writer writer) {
+    fmt_String str = writer.string;
+    str.data[str.size] = '\0';
+    ++str.size;
+    return str;
 }
 
 fmt_Buffered_Writer fmt_bw_new(fmt_Writer *inner) {
@@ -3880,12 +3923,7 @@ static int fmt__write_grouped_time(
     const char *restrict format,
     const struct tm *restrict datetime
 ) {
-    fmt_String_Writer group_writer = {
-        .base = fmt_STRING_WRITER_FUNCTIONS,
-        .string = buf,
-        .at = buf,
-        .end = buf + size,
-    };
+    fmt_String_Writer group_writer = fmt_sw_new(buf, size);
     const int end = fmt_write_time(
         (fmt_Writer *)&group_writer, format, datetime
     );
@@ -4476,12 +4514,7 @@ int fmt_va_sprint(
     int arg_count,
     va_list ap
 ) {
-    fmt_String_Writer writer = (fmt_String_Writer) {
-        .base = fmt_STRING_WRITER_FUNCTIONS,
-        .string = string,
-        .at = string,
-        .end = string + size - 1,
-    };
+    fmt_String_Writer writer = fmt_sw_new(string, size - 1);
     const int written = fmt_va_write((fmt_Writer *)&writer, format, arg_count, ap);
     string[written] = '\0';
     return written;
@@ -4557,12 +4590,7 @@ int fmt_format_time_to(
     const char *restrict format,
     const struct tm *restrict datetime
 ) {
-    fmt_String_Writer writer = {
-        .base = fmt_STRING_WRITER_FUNCTIONS,
-        .string = buf,
-        .at = buf,
-        .end = buf + size - 1,
-    };
+    fmt_String_Writer writer = fmt_sw_new(buf, size - 1);
     const int written = fmt_write_time((fmt_Writer*)&writer, format, datetime);
     *writer.at = '\0';
     return written;
