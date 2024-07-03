@@ -89,19 +89,8 @@ static bool expect_time_impl(
 ) {
     char *const buf = get_string_buf();
     memset(buf, 0, STRING_BUF_SIZE);
-#ifdef __cplusplus
-    fmt_String_Writer writer = (fmt_String_Writer) {
-        .base = fmt_STRING_WRITER_FUNCTIONS,
-        .string = buf,
-        .at = buf,
-        .end = buf + BUF_SIZE,
-    };
+    fmt_String_Writer writer = fmt_sw_new(buf, STRING_BUF_SIZE);
     const int written = fmt_write_time((fmt_Writer *)&writer, fmt, datetime);
-#else
-    const int written = fmt_write_time(
-        FMT_NEW_STRING_WRITER(buf, STRING_BUF_SIZE), fmt, datetime
-    );
-#endif
     return expect_check(source_line, expected, buf, written);
 }
 
