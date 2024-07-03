@@ -18,6 +18,13 @@
 #define STRINGIFY_2(x) #x
 #define STRINGIFY(x) STRINGIFY_2(x)
 
+enum { STRING_BUF_SIZE = 256 };
+
+static char* get_string_buf() {
+    static char buf[STRING_BUF_SIZE];
+    return buf;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Expect formatted string
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,23 +61,12 @@ static bool expect_check(
 static bool expect_impl(
     int source_line, const char *expected, const char *fmt, int arg_count, ...
 ) {
-    static char buf[256];
-    memset(buf, 0, sizeof(buf));
+    char *const buf = get_string_buf();
+    memset(buf, 0, STRING_BUF_SIZE);
     va_list ap;
     va_start(ap, arg_count);
-#ifdef __cplusplus
-    fmt_String_Writer writer = (fmt_String_Writer) {
-        .base = fmt_STRING_WRITER_FUNCTIONS,
-        .string = buf,
-        .at = buf,
-        .end = buf + sizeof(buf),
-    };
+    fmt_String_Writer writer = fmt_sw_new(buf, STRING_BUF_SIZE);
     const int written = fmt_va_write((fmt_Writer *)&writer, fmt, arg_count, ap);
-#else
-    const int written = fmt_va_write(
-        FMT_NEW_STRING_WRITER(buf, sizeof(buf)), fmt, arg_count, ap
-    );
-#endif
     va_end(ap);
     return expect_check(source_line, expected, buf, written);
 }
@@ -91,19 +87,19 @@ static bool expect_impl(
 static bool expect_time_impl(
     int source_line, const char *expected, const char *fmt, const struct tm *datetime
 ) {
-    static char buf[256];
-    memset(buf, 0, sizeof(buf));
+    char *const buf = get_string_buf();
+    memset(buf, 0, STRING_BUF_SIZE);
 #ifdef __cplusplus
     fmt_String_Writer writer = (fmt_String_Writer) {
         .base = fmt_STRING_WRITER_FUNCTIONS,
         .string = buf,
         .at = buf,
-        .end = buf + sizeof(buf),
+        .end = buf + BUF_SIZE,
     };
     const int written = fmt_write_time((fmt_Writer *)&writer, fmt, datetime);
 #else
     const int written = fmt_write_time(
-        FMT_NEW_STRING_WRITER(buf, sizeof(buf)), fmt, datetime
+        FMT_NEW_STRING_WRITER(buf, STRING_BUF_SIZE), fmt, datetime
     );
 #endif
     return expect_check(source_line, expected, buf, written);
@@ -237,7 +233,7 @@ static const char * my_parse_specifier(
 static bool expect_panic_impl(
     int source_line, const char *message, const char *format, int arg_count, ...
 ) {
-    static char buf[256];
+    char *const buf = get_string_buf();
     int pipe_ends[2];
     pipe(pipe_ends);
     const int rx = pipe_ends[0];
@@ -252,7 +248,7 @@ static bool expect_panic_impl(
         close(rx);
         va_list ap;
         va_start(ap, arg_count);
-        fmt_va_sprint(buf, sizeof(buf), format, arg_count, ap);
+        fmt_va_sprint(buf, STRING_BUF_SIZE, format, arg_count, ap);
         va_end(ap);
         close(tx);
         exit(EXIT_SUCCESS);
@@ -266,7 +262,7 @@ static bool expect_panic_impl(
         );
         return false;
     }
-    const ssize_t n = read(rx, buf, sizeof(buf));
+    const ssize_t n = read(rx, buf, STRING_BUF_SIZE);
     buf[n - 1] = '\0';
     close(rx);
     // I have no idea why but inserts a newline between the fmt__panic_loc
@@ -966,12 +962,49 @@ su_module(panics, {
     })
 })
 
+su_module(writers, {
+    su_test("allocating writer", {
+        enum { COUNT = 1000};
+        fmt_Allocating_String_Writer writer = fmt_aw_new();
+        for (int i = 0; i < COUNT; ++i) {
+            fmt_write((fmt_Writer*)&writer, "a");
+        }
+        fmt_String str = fmt_aw_finish(writer);
+        su_assert_eq(str.size, COUNT+1);
+        for (int i = 0; i < COUNT; ++i) {
+            su_assert_eq(str.data[i], 'a');
+        }
+        su_assert_eq(str.data[COUNT], '\0');
+        free(str.data);
+    })
+
+    su_test("buffered writer", {
+        char *const buf = get_string_buf();
+        memset(buf, 0, STRING_BUF_SIZE);
+        fmt_String_Writer inner = fmt_sw_new(buf, STRING_BUF_SIZE);
+        fmt_Buffered_Writer writer = fmt_bw_new((fmt_Writer*)&inner);
+        for (int i = 0; i < FMT_BUFFERED_WRITER_CAPACITY; ++i) {
+            fmt_write((fmt_Writer*)&writer, "a");
+        }
+        su_assert_eq(strlen(buf), 0);
+        fmt_write((fmt_Writer*)&writer, "a");
+        su_assert_eq(strlen(buf), FMT_BUFFERED_WRITER_CAPACITY);
+        for (int i = 0; i < FMT_BUFFERED_WRITER_CAPACITY; ++i) {
+            su_assert_eq(buf[i], 'a');
+        }
+        fmt_bw_flush(&writer);
+        su_assert_eq(strlen(buf), FMT_BUFFERED_WRITER_CAPACITY + 1);
+        su_assert_eq(buf[FMT_BUFFERED_WRITER_CAPACITY], 'a');
+    })
+})
+
 int main() {
     SUResult total = su_new_result();
     su_add_result(&total, su_run_module(internal_functions));
     su_add_result(&total, su_run_module(basic_printing));
     su_add_result(&total, su_run_module(formatting));
     su_add_result(&total, su_run_module(datetime));
+    su_add_result(&total, su_run_module(writers));
     // This is slow so I leave it disabled during development and only enable it
     // after finishing something new.
     //su_add_result(&total, su_run_module(panics));
