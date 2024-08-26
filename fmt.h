@@ -1300,6 +1300,11 @@ void fmt_bw_flush(fmt_Buffered_Writer *bw) {
 //    Permission to use, copy, modify, and distribute this software
 //    for any purpose and without fee is hereby granted. The author
 //    disclaims all warranties with regard to this software.
+//
+// Note: I have tried using the skip search algorithm used by Rust for this,
+//       but it was barely any faster and the code size was roughly the same;
+//       so I'm keeping this more basic implementation which is also easier to
+//       understand.
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
@@ -1424,7 +1429,8 @@ int fmt__mk_wcwidth(char32_t ucs) {
     }
 
     /* binary search in table of non-spacing characters */
-    if (fmt__mk_bisearch(ucs, combining, sizeof(combining) / sizeof(fmt__Mk_Interval) - 1)) {
+    if ((ucs >= combining[0].first)
+        && fmt__mk_bisearch(ucs, combining, sizeof(combining) / sizeof(fmt__Mk_Interval) - 1)) {
         return 0;
     }
 
@@ -1529,11 +1535,6 @@ static int fmt__display_width(char32_t ucs) {
 #else
 #  define fmt__display_width fmt__mk_wcwidth
 #endif
-
-// TODO: change display width to consider all ascii characters as 1 wide?
-// This would make it a bit faster, but since the big condition block filters
-// a lot of characters in the first and expression it reall only skips the
-// 0 width checks before.
 
 /// Decodes 1 codepoint from valid UTF-8 data.  Returns the number of bytes the
 /// codepoint uses.
