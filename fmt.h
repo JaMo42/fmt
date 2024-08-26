@@ -2936,6 +2936,12 @@ static void fmt__float_grisu2(fmt__Float v, char *buffer, int *length, int *K) {
 }
 
 static void fmt__grisu2(double v, char *buffer, int *length, int *K) {
+    if (v == 0.0) {
+        buffer[0] = '0';
+        *length = 1;
+        *K = 0;
+        return;
+    }
     const fmt__Float f = fmt__float_from_f64(v);
     fmt__float_grisu2(f, buffer, length, K);
 }
@@ -2992,7 +2998,7 @@ static int fmt__write_float_decimal_integer(
     int kk,
     char32_t thousep
 ) {
-    if (kk < 0) {
+    if (kk <= 0) {
         writer->write_byte(writer, '0');
         return 1;
     } else if (k < 0) {
@@ -3046,7 +3052,7 @@ static int fmt__write_float_decimal_fraction(
     int kk
 ) {
     int written = 0;
-    if (kk < 0) {
+    if (kk <= 0) {
         written += fmt__pad(writer, -kk, '0');
         written += writer->write_data(writer, buf, len);
     } else if (k < 0) {
@@ -3537,7 +3543,7 @@ static int fmt__print_bool(
 
 #define FMT__GRISU2(_v)                        \
     char sign;                                 \
-    if (_v< 0.0) {                             \
+    if (_v < 0.0) {                            \
         sign = '-';                            \
         _v = -_v;                              \
     } else if (fs->sign == fmt_SIGN_ALWAYS) {  \

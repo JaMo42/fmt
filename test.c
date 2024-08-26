@@ -25,6 +25,9 @@ static char* get_string_buf() {
     return buf;
 }
 
+bool compact_flag = false;
+bool stop_on_failure_flag = false;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Expect formatted string
 ////////////////////////////////////////////////////////////////////////////////
@@ -367,6 +370,16 @@ skip:
 }
 
 su_module_d(internal_functions, "internal functions", {
+    su_compact = compact_flag;
+    su_stop_on_failure = stop_on_failure_flag;
+
+    su_test("argument count", {
+        su_assert_eq(FMT_VA_ARG_COUNT(), 0);
+        su_assert_eq(FMT_VA_ARG_COUNT(1), 1);
+        su_assert_eq(FMT_VA_ARG_COUNT(1, 2), 2);
+        su_assert_eq(FMT_VA_ARG_COUNT(,), 2);
+    })
+
     su_test("integer width", {
         su_assert_eq(fmt__unsigned_width(1000, 10), 4);
         su_assert_eq(fmt__unsigned_width(0x1000, 16), 4);
@@ -466,6 +479,9 @@ su_module_d(internal_functions, "internal functions", {
 })
 
 su_module_d(basic_printing, "basic printing", {
+    su_compact = compact_flag;
+    su_stop_on_failure = stop_on_failure_flag;
+
     su_test("characters", {
         expect("a", "{}", (char)'a');
         expect("a", "{c}", u'a');
@@ -524,6 +540,18 @@ su_module_d(basic_printing, "basic printing", {
     })
 
     su_test("floats", {
+        expect("-2", "{}", -2.0);
+        expect("-1", "{}", -1.0);
+        expect("-0.5", "{}", -0.5);
+        expect("-0.1", "{}", -0.1);
+        expect("-0.01", "{}", -0.01);
+        expect("0", "{}", -0.0);
+        expect("0", "{}", 0.0);
+        expect("0.01", "{}", 0.01);
+        expect("0.1", "{}", 0.1);
+        expect("0.5", "{}", 0.5);
+        expect("1", "{}", 1.0);
+        expect("2", "{}", 2.0);
         expect("3.141", "{}", 3.141);
         expect("0.0123456789", "{:.10}", 0.0123456789);
         expect("-3.141", "{:.3}", -3.141);
@@ -599,6 +627,9 @@ su_module_d(basic_printing, "basic printing", {
 })
 
 su_module(formatting, {
+    su_compact = compact_flag;
+    su_stop_on_failure = stop_on_failure_flag;
+
     su_test("alignment (and width)", {
         expect("Hello    ", "{:9}", "Hello");
         expect("Hello    ", "{:<9}", "Hello");
@@ -821,6 +852,9 @@ su_module(formatting, {
 })
 
 su_module(datetime, {
+    su_compact = compact_flag;
+    su_stop_on_failure = stop_on_failure_flag;
+
     struct tm datetime_value;
     memset(&datetime_value, 0, sizeof(struct tm));
     datetime_value.tm_sec = 1;
@@ -916,6 +950,9 @@ su_module(datetime, {
 })
 
 su_module(panics, {
+    su_compact = compact_flag;
+    su_stop_on_failure = stop_on_failure_flag;
+
     su_test("argument count", {
         expect_panic("arguments exhausted at specifier 1", "{}");
         expect_panic("3 arguments left", "", 1, 2, 3);
@@ -987,7 +1024,19 @@ su_module(writers, {
     })
 })
 
-int main() {
+int main(const int argc, const char **argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--compact") == 0 || strcmp(argv[i], "-c") == 0) {
+            compact_flag = true;
+        } else if (strcmp(argv[i], "--stop-on-failure") == 0 || strcmp(argv[i], "-s") == 0) {
+            stop_on_failure_flag = true;
+        } else if (strcmp(argv[i], "--help") == 0
+                   || strcmp(argv[i], "-h") == 0
+                   || strcmp(argv[i], "-?") == 0) {
+            puts("Usage: ./test [-c/--compact] [-s/--stop-on-failure]");
+            return 0;
+        }
+    }
     SUResult total = su_new_result();
     su_add_result(&total, su_run_module(internal_functions));
     su_add_result(&total, su_run_module(basic_printing));
