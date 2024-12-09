@@ -4277,7 +4277,7 @@ static int fmt__print_specifier(
             goto t_time;
 
         FMT_TID_CASE(fmt__TYPE_FMT_STRING, v_fmt_string, fmt_String, t_fmt_string)
-        FMT_TID_CASE(fmt__TYPE_FMT_STRING_TAKE, v_fmt_string, fmt_String, t_fmt_string_take)
+        FMT_TID_CASE(fmt__TYPE_FMT_STRING_TAKE, v_fmt_string.take, struct fmt_String_Take, t_fmt_string_take)
 
         case fmt__TYPE_UNKNOWN:
             // Unknown is also used for all pointers we don't specify an explicit
