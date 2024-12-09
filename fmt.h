@@ -426,6 +426,16 @@ FMT__STATIC_ASSERT(
     "fmt_String is too large"
 );
 
+/// Returns an empty string, does not allocate.
+/// Useful for quick and dirty code using `fmt_format`.
+///
+/// Example
+/// -------
+/// ```
+/// fmt_println("{}", (condition ? fmt_format(...) : fmt_string_new()).take);
+/// ```
+fmt_String fmt_string_new();
+
 typedef struct {
     fmt_Writer base;
     fmt_String string;
@@ -978,6 +988,10 @@ static int fmt__min(int a, int b) {
 /// Evaluates to `true` if the given given static buffer contains the given
 /// ascii character.
 #define FMT__BUFCHR(_buf, _c) (memchr(_buf, _c, sizeof(_buf) - 1) != NULL)
+
+fmt_String fmt_string_new() {
+    return (fmt_String){ .data=(char*)NULL, .size=0, .capacity=0 };
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Type ID functions
