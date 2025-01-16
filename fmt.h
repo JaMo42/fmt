@@ -16,21 +16,20 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <ctype.h>
-#ifndef _WIN32
-#  include <threads.h>
-#  define FMT__THREAD_LOCAL thread_local
-#else
-#  ifdef FMT_LOCKED_DEFAULT_PRINTERS
-#    undef FMT_LOCKED_DEFAULT_PRINTERS
-#    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not implemented on this platform"
-#  endif
+#ifdef __STDC_NO_THREADS__
 #  if __STDC_VERSION__ <= 201710L
 #    define FMT__THREAD_LOCAL _Thread_local
 #  else
 #    define FMT__THREAD_LOCAL thread_local
 #  endif
+#  ifdef FMT_LOCKED_DEFAULT_PRINTERS
+#    undef FMT_LOCKED_DEFAULT_PRINTERS
+#    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not available"
+#  endif
+#else
+#  include <threads.h>
+#  define FMT__THREAD_LOCAL thread_local
 #endif
-#include <uchar.h>
 #include <math.h>
 #include <time.h>
 #include <locale.h>
@@ -40,10 +39,29 @@
 #include <wctype.h>
 #include <assert.h>
 
-// `char8_t` is only available since C23 but we also want to support C11 so
-// since we need our typedef anyways we never use `char8_t` since we wouldn't
-// want to use that name for the C11 version.
+// In theory we don't need to wrap char16_t and char32_t, as uchar.h defines them
+// if they don't exist, but Apple's clang does not have uchar.h for some reason.
+#ifdef __cplusplus
+// In C++ these are distinct types that can get first class type IDs;
+// doesn't really matter as this library is not intended for C++ and the
+// compatibility just exists to easy multi-language projects, but it's
+// still nice to have.
+typedef char32_t fmt_char32_t;
+typedef char16_t fmt_char16_t;
+#ifdef __cpp_char8_t
+#define FMT_CPP_CHAR8_DISTINCT
+typedef char8_t fmt_char8_t;
+#else
 typedef uint_least8_t fmt_char8_t;
+#endif
+#else
+// In C however they are always just integers, even if uchar.h is available;
+// they can be used as strings but will always need an explicit type in the
+// format string to be printed as characters.
+typedef uint_least8_t fmt_char8_t;
+typedef uint_least32_t fmt_char32_t;
+typedef uint_least16_t fmt_char16_t;
+#endif
 
 #if defined(__cplusplus) || __STDC_VERSION__ > 201710L
 #  define FMT__NORETURN [[noreturn]]
@@ -90,7 +108,7 @@ typedef uint_least8_t fmt_char8_t;
 // Windows.  On that compiler we can't just copy the `va_list`s as that would
 // keep giving us the first argument over and over.  On linux however we can't
 // take the address of a `va_list`.
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 typedef va_list *fmt__va_list_ref;
 #define FMT__VA_LIST_REF(ap) &ap
 #define FMT__VA_LIST_DEREF(ap) *ap
@@ -282,8 +300,12 @@ struct fmt_String {
 #define FMT_TYPE_ID(_T, _id) \
     static constexpr fmt_Type_Id FMT__TYPE_ID([[maybe_unused]] _T _) { return _id; }
 FMT_TYPE_ID(char, fmt__TYPE_CHAR);
-FMT_TYPE_ID(char16_t, fmt__TYPE_UNSIGNED_SHORT;)
-FMT_TYPE_ID(char32_t, fmt__TYPE_UNSIGNED;)
+#ifdef FMT_CPP_CHAR8_DISTINCT
+#undef FMT_CPP_CHAR8_DISTINCT
+FMT_TYPE_ID(char8_t, fmt__TYPE_STRING);
+#endif
+FMT_TYPE_ID(char16_t, fmt__TYPE_CHAR);
+FMT_TYPE_ID(char32_t, fmt__TYPE_CHAR);
 FMT_TYPE_ID(wchar_t, fmt__TYPE_WCHAR);
 FMT_TYPE_ID(signed char, fmt__TYPE_SIGNED_CHAR);
 FMT_TYPE_ID(short, fmt__TYPE_SHORT);
@@ -300,12 +322,14 @@ FMT_TYPE_ID(double, fmt__TYPE_DOUBLE);
 FMT_TYPE_ID(bool, fmt__TYPE_BOOL);
 FMT_TYPE_ID(char *, fmt__TYPE_STRING);
 FMT_TYPE_ID(const char *, fmt__TYPE_STRING);
+// Note: this is a different type from char*, but since we require all strings
+// to be UTF-8 this difference does not matter.
 FMT_TYPE_ID(fmt_char8_t *, fmt__TYPE_STRING);
 FMT_TYPE_ID(const fmt_char8_t *, fmt__TYPE_STRING);
-FMT_TYPE_ID(const char16_t *, fmt__TYPE_STRING_16);
-FMT_TYPE_ID(char16_t *, fmt__TYPE_STRING_16);
-FMT_TYPE_ID(const char32_t *, fmt__TYPE_STRING_32);
-FMT_TYPE_ID(char32_t *, fmt__TYPE_STRING_32);
+FMT_TYPE_ID(const fmt_char16_t *, fmt__TYPE_STRING_16);
+FMT_TYPE_ID(fmt_char16_t *, fmt__TYPE_STRING_16);
+FMT_TYPE_ID(const fmt_char32_t *, fmt__TYPE_STRING_32);
+FMT_TYPE_ID(fmt_char32_t *, fmt__TYPE_STRING_32);
 #ifdef _WIN32
 FMT_TYPE_ID(wchar_t *, fmt__TYPE_STRING_16);
 FMT_TYPE_ID(const wchar_t *, fmt__TYPE_STRING_16);
@@ -345,12 +369,12 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         const char *: fmt__TYPE_STRING, \
         fmt_char8_t *: fmt__TYPE_STRING, \
         const fmt_char8_t *: fmt__TYPE_STRING, \
-        const char16_t *: fmt__TYPE_STRING_16, \
-        char16_t *: fmt__TYPE_STRING_16, \
-        const char32_t *: fmt__TYPE_STRING_32, \
-        char32_t *: fmt__TYPE_STRING_32, \
+        const fmt_char16_t *: fmt__TYPE_STRING_16, \
+        fmt_char16_t *: fmt__TYPE_STRING_16, \
+        const fmt_char32_t *: fmt__TYPE_STRING_32, \
+        fmt_char32_t *: fmt__TYPE_STRING_32, \
         /* These match wchar_t strings on linux, on windows they are already
-           matched by char16_t. */ \
+           matched by fmt_char16_t. */ \
         int *: fmt__TYPE_STRING_32, \
         const int*: fmt__TYPE_STRING_32, \
         void *: fmt__TYPE_POINTER, \
@@ -1036,7 +1060,7 @@ negative:
     fmt_panic("expected unsigned value");
 }
 
-static char32_t fmt__va_get_character(fmt__va_list_ref ap) {
+static fmt_char32_t fmt__va_get_character(fmt__va_list_ref ap) {
     fmt_Type_Id type = (fmt_Type_Id)va_arg(FMT__VA_LIST_DEREF(ap), int);
     switch (type) {
     case fmt__TYPE_CHAR:
@@ -1335,12 +1359,12 @@ void fmt_bw_flush(fmt_Buffered_Writer *bw) {
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
-    char32_t first;
-    char32_t last;
+    fmt_char32_t first;
+    fmt_char32_t last;
 } fmt__Mk_Interval;
 
 /* auxiliary function for binary search in interval table */
-static int fmt__mk_bisearch(char32_t ucs, const fmt__Mk_Interval *table, int max) {
+static int fmt__mk_bisearch(fmt_char32_t ucs, const fmt__Mk_Interval *table, int max) {
     int min = 0;
     int mid;
 
@@ -1391,7 +1415,7 @@ static int fmt__mk_bisearch(char32_t ucs, const fmt__Mk_Interval *table, int max
  * This implementation assumes that wchar_t characters are encoded
  * in ISO 10646.
  */
-int fmt__mk_wcwidth(char32_t ucs) {
+int fmt__mk_wcwidth(fmt_char32_t ucs) {
     /* sorted list of non-overlapping intervals of non-spacing characters */
     /* generated by "uniset +cat=Me +cat=Mn +cat=Cf -00AD +1160-11FF +200B c" */
     static const fmt__Mk_Interval combining[] = {
@@ -1508,13 +1532,13 @@ static int fmt__utf8_codepoint_length(fmt_char8_t leading_byte) {
 }
 
 /// Returns `true` if the given value is a valid Unicode codepoint.
-static bool fmt__is_valid_codepoint(char32_t codepoint) {
+static bool fmt__is_valid_codepoint(fmt_char32_t codepoint) {
     const bool is_surrogate = codepoint >= 0xd800 && codepoint <= 0xdfff;
     return !is_surrogate && codepoint <= FMT_MAX_CODEPOINT;
 }
 
 /// Returns the number of bytes a codepoint takes in UTF-8 representation.
-static int fmt__codepoint_utf8_length(char32_t codepoint) {
+static int fmt__codepoint_utf8_length(fmt_char32_t codepoint) {
     if (!fmt__is_valid_codepoint(codepoint)) {
         return 3;
     }
@@ -1540,7 +1564,7 @@ static int fmt__ascii_display_width(char ch_) {
 
 #ifdef FMT_FAST_DISPLAY_WIDTH
 /// Returns the display width of a non-zero-width character.
-static int fmt__display_width(char32_t ucs) {
+static int fmt__display_width(fmt_char32_t ucs) {
     /* test for 8-bit control characters */
     if (ucs < 32 || (ucs >= 0x7f && ucs < 0xa0))
         return 0;
@@ -1566,23 +1590,23 @@ static int fmt__display_width(char32_t ucs) {
 /// Decodes 1 codepoint from valid UTF-8 data.  Returns the number of bytes the
 /// codepoint uses.
 static int fmt__utf8_decode(
-    const fmt_char8_t *restrict data, char32_t *restrict codepoint
+    const fmt_char8_t *restrict data, fmt_char32_t *restrict codepoint
 ) {
     if (data[0] < 0x80) {
         *codepoint = data[0];
         return 1;
     } else if (data[0] < 0xe0) {
-        *codepoint = ((char32_t)(data[0] & 0x1f) << 6) | (data[1] & 0x3f);
+        *codepoint = ((fmt_char32_t)(data[0] & 0x1f) << 6) | (data[1] & 0x3f);
         return 2;
     } else if (data[0] < 0xf0) {
-        *codepoint = (((char32_t)(data[0] & 0x0f) << 12)
-                      | ((char32_t)(data[1] & 0x3f) << 6)
+        *codepoint = (((fmt_char32_t)(data[0] & 0x0f) << 12)
+                      | ((fmt_char32_t)(data[1] & 0x3f) << 6)
                       | (data[2] & 0x3f));
         return 3;
     } else {
-        *codepoint = (((char32_t)(data[0] & 0x07) << 18)
-                      | ((char32_t)(data[1] & 0x3f) << 12)
-                      | ((char32_t)(data[2] & 0x3f) << 6)
+        *codepoint = (((fmt_char32_t)(data[0] & 0x07) << 18)
+                      | ((fmt_char32_t)(data[1] & 0x3f) << 12)
+                      | ((fmt_char32_t)(data[2] & 0x3f) << 6)
                       | (data[3] & 0x3f));
         return 4;
     }
@@ -1590,12 +1614,12 @@ static int fmt__utf8_decode(
 
 #define FMT__ITER_UTF16(_str, _len, ...)                      \
     do {                                                      \
-        char32_t codepoint;                                   \
+        fmt_char32_t codepoint;                                   \
         while (_len --> 0) {                                  \
             codepoint = *_str++;                              \
             if (codepoint >= 0xD800 && codepoint <= 0xDBFF) { \
                 codepoint = (codepoint & 0x3FF) << 10;        \
-                codepoint |= (char32_t)*_str++ & 0x3FF;       \
+                codepoint |= (fmt_char32_t)*_str++ & 0x3FF;       \
                 codepoint += 0x10000;                         \
                 --_len;                                       \
             }                                                 \
@@ -1620,7 +1644,7 @@ static fmt_Int_Pair fmt__utf8_width_and_length(
     }
     const fmt_char8_t *p = (const fmt_char8_t *)str;
     const fmt_char8_t *end = p + size;
-    char32_t codepoint;
+    fmt_char32_t codepoint;
     while (p != end) {
         p += fmt__utf8_decode(p, &codepoint);
         if (max_chars_for_width-- > 0) {
@@ -1631,7 +1655,7 @@ static fmt_Int_Pair fmt__utf8_width_and_length(
     return (fmt_Int_Pair) { width, length };
 }
 
-static size_t fmt__utf16_strlen(const char16_t *str) {
+static size_t fmt__utf16_strlen(const fmt_char16_t *str) {
     size_t length = 0;
     while (*str++) {
         ++length;
@@ -1644,7 +1668,7 @@ static size_t fmt__utf16_strlen(const char16_t *str) {
 /// If `max_chars_for_width` is non-negative only that many characters are used
 /// for the width calculation.
 static fmt_Int_Pair fmt__utf16_width_and_length(
-    const char16_t *str, int size, int max_chars_for_width
+    const fmt_char16_t *str, int size, int max_chars_for_width
 ) {
     int width = 0;
     int length = 0;
@@ -1663,7 +1687,7 @@ static fmt_Int_Pair fmt__utf16_width_and_length(
     return (fmt_Int_Pair) { width, length };
 }
 
-static size_t fmt__utf32_strlen(const char32_t *str) {
+static size_t fmt__utf32_strlen(const fmt_char32_t *str) {
     size_t length = 0;
     while (*str++) {
         ++length;
@@ -1671,7 +1695,7 @@ static size_t fmt__utf32_strlen(const char32_t *str) {
     return length;
 }
 
-static int fmt__utf32_width(const char32_t *str, int size) {
+static int fmt__utf32_width(const fmt_char32_t *str, int size) {
     int width = 0;
     if (size < 0) {
         size = fmt__utf32_strlen(str);
@@ -1682,7 +1706,7 @@ static int fmt__utf32_width(const char32_t *str, int size) {
     return width;
 }
 
-static int fmt__utf8_encode(char32_t codepoint, char *buf) {
+static int fmt__utf8_encode(fmt_char32_t codepoint, char *buf) {
     static const char REPLACEMENT_CHARACTER_UTF8[] = "\xEF\xBF\xBD";
     if (!fmt__is_valid_codepoint(codepoint)) {
         *buf++ = REPLACEMENT_CHARACTER_UTF8[0];
@@ -1728,7 +1752,7 @@ static void fmt__ib_flush(fmt__Intermediate_Buffer *buf, fmt_Writer *writer) {
 }
 
 static void fmt__ib_push(
-    fmt__Intermediate_Buffer *buf, char32_t ch, fmt_Writer *writer
+    fmt__Intermediate_Buffer *buf, fmt_char32_t ch, fmt_Writer *writer
 ) {
     const int len = fmt__codepoint_utf8_length(ch);
     if (buf->len + len > sizeof(buf->data)) {
@@ -1768,7 +1792,7 @@ static int fmt__write_utf8(
     return writer->write_data(writer, str, end - str);
 }
 
-static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
+static int fmt__write_codepoint(fmt_Writer *writer, fmt_char32_t codepoint) {
     char buf[4];
     const int len = fmt__utf8_encode(codepoint, buf);
     return writer->write_data(writer, buf, len);
@@ -1776,7 +1800,7 @@ static int fmt__write_codepoint(fmt_Writer *writer, char32_t codepoint) {
 
 /// `len` is the number of codepoints.
 static int fmt__write_utf16(
-    fmt_Writer *restrict writer, const char16_t *restrict str, int len
+    fmt_Writer *restrict writer, const fmt_char16_t *restrict str, int len
 ) {
     fmt__Intermediate_Buffer buf = {};
     FMT__ITER_UTF16(str, len, {
@@ -1787,7 +1811,7 @@ static int fmt__write_utf16(
 }
 
 static int fmt__write_utf32(
-    fmt_Writer *restrict writer, const char32_t *restrict str, int len
+    fmt_Writer *restrict writer, const fmt_char32_t *restrict str, int len
 ) {
     fmt__Intermediate_Buffer buf = {};
     while (len --> 0) {
@@ -1808,7 +1832,7 @@ static int fmt__utf8_chars_len(const char *str, int chars) {
     return length;
 }
 
-static int fmt__utf16_chars_len(const char16_t *str, int chars) {
+static int fmt__utf16_chars_len(const fmt_char16_t *str, int chars) {
     int length = 0;
     while (chars--) {
         if (*str >= 0xD800 && *str <= 0xDBFF) {
@@ -1820,7 +1844,7 @@ static int fmt__utf16_chars_len(const char16_t *str, int chars) {
     return length;
 }
 
-static int fmt__utf32_chars_len(const char32_t *str, int chars) {
+static int fmt__utf32_chars_len(const fmt_char32_t *str, int chars) {
     // this function is useless now but we still need for the table in
     // fmt__print_specifier.
     (void)str;
@@ -1836,7 +1860,7 @@ static const char * fmt__utf8_skip(const char *str, int n) {
 }
 
 /// Skips `index` codepoints and returns the ascii character after that.
-static char32_t fmt__utf8_peek_ascii(const char *str, int index) {
+static fmt_char32_t fmt__utf8_peek_ascii(const char *str, int index) {
     return *fmt__utf8_skip(str, index);
 }
 
@@ -1897,10 +1921,10 @@ typedef enum {
 } fmt_Sign;
 
 typedef struct {
-    char32_t fill;
+    fmt_char32_t fill;
     fmt_Alignment align;
     fmt_Sign sign;
-    char32_t group;
+    fmt_char32_t group;
     int precision;
     int width;
     char type;
@@ -2111,7 +2135,7 @@ static const char * fmt__parse_specifier_after_colon(
     static const char disambiguating_next_characters[] = "}?.";
     // In addition to this, `?}` at this point will be considered as debug
     // format + end of specifier, and not grouping.
-    const char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
+    const fmt_char32_t next = fmt__utf8_peek_ascii(format_specifier, 1);
     if ((!FMT__BUFCHR(ambiguous_characters, *format_specifier)
          || FMT__BUFCHR(disambiguating_next_characters, next))
         && !(*format_specifier == '?' && next == '}')
@@ -2333,7 +2357,7 @@ typedef struct {
     int prefix_len;
     int base;
     int (*write_digits)(fmt_Writer *writer, uint64_t n, int len);
-    int (*write_digits_grouped)(fmt_Writer *writer, uint64_t n, int len, char32_t group_char);
+    int (*write_digits_grouped)(fmt_Writer *writer, uint64_t n, int len, fmt_char32_t group_char);
 } fmt_Base;
 
 static int fmt__unsigned_width_10(unsigned long long n) {
@@ -2414,7 +2438,7 @@ static int fmt__unsigned_width(unsigned long long n, int base) {
     }
 }
 
-static int fmt__grouping_width(int length, int base, char32_t groupchar) {
+static int fmt__grouping_width(int length, int base, fmt_char32_t groupchar) {
     const int groupwidth = fmt__display_width(groupchar);
     // Pretty dodgy to have these hardcoded here.
     int interval;
@@ -2443,7 +2467,7 @@ static int fmt__grouping_width(int length, int base, char32_t groupchar) {
     return groupchars * groupwidth;
 }
 
-static int fmt__pad(fmt_Writer *writer, int n, char32_t ch) {
+static int fmt__pad(fmt_Writer *writer, int n, fmt_char32_t ch) {
     if (n <= 0) {
         return 0;
     }
@@ -2500,7 +2524,7 @@ static int fmt__write_grouped(
     fmt_Writer *restrict writer,
     const char *restrict buf,
     int len,
-    char32_t groupchar,
+    fmt_char32_t groupchar,
     int interval
 ) {
     char grouputf8[4];
@@ -2543,7 +2567,7 @@ static int fmt__write_grouped(
         }                                                                      \
         return writer->write_data(writer, buf, len);                           \
     }                                                                          \
-    static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, char32_t groupchar) { \
+    static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, fmt_char32_t groupchar) { \
         if (n == 0) {                                                          \
             return writer->write_byte(writer, '0');                            \
         }                                                                      \
@@ -2992,7 +3016,7 @@ static int fmt__write_float_exponent(fmt_Writer *writer, int K) {
     return written;
 }
 
-static int fmt__float_decimal_integer_width(int intlen, char sign, char32_t thousep) {
+static int fmt__float_decimal_integer_width(int intlen, char sign, fmt_char32_t thousep) {
     return (!!sign
             + intlen
             + (thousep ? (intlen - 1) / 3 * fmt__display_width(thousep) : 0));
@@ -3016,7 +3040,7 @@ static int fmt__write_float_decimal_integer(
     int intlen,
     int k,
     int kk,
-    char32_t thousep
+    fmt_char32_t thousep
 ) {
     if (kk <= 0) {
         writer->write_byte(writer, '0');
@@ -3122,7 +3146,7 @@ typedef struct {
     o('\n', "\\n") \
     o('\\', "\\\\")
 
-static int fmt__debug_escaped_char_width(char32_t ch, fmt__DebugCharEscapeArgs args) {
+static int fmt__debug_escaped_char_width(fmt_char32_t ch, fmt__DebugCharEscapeArgs args) {
     #define O(_ch, _) case _ch:
     switch (ch) {
     FMT__DEBUG_ENUM_COMMON_ESCAPES(O)
@@ -3150,7 +3174,7 @@ static int fmt__debug_escaped_char_width(char32_t ch, fmt__DebugCharEscapeArgs a
     }
 }
 
-static int fmt__debug_char_width(char32_t ch, bool quote) {
+static int fmt__debug_char_width(fmt_char32_t ch, bool quote) {
     return fmt__debug_escaped_char_width(ch, (fmt__DebugCharEscapeArgs) {
         .escape_single_quote = quote,
         .escape_double_quote = false,
@@ -3170,7 +3194,7 @@ static fmt_Int_Pair fmt__debug_utf8_width_and_length(
     }
     const fmt_char8_t *p = (const fmt_char8_t *)str;
     const fmt_char8_t *end = p + size;
-    char32_t codepoint;
+    fmt_char32_t codepoint;
     while (p != end) {
         p += fmt__utf8_decode(p, &codepoint);
         if (max_chars_for_width-- > 0) {
@@ -3188,7 +3212,7 @@ static fmt_Int_Pair fmt__debug_utf8_width_and_length(
 }
 
 static fmt_Int_Pair fmt__debug_utf16_width_and_length(
-    const char16_t *str, int size, int max_chars_for_width, bool quote
+    const fmt_char16_t *str, int size, int max_chars_for_width, bool quote
 ) {
     int width = 0;
     int length = 0;
@@ -3213,7 +3237,7 @@ static fmt_Int_Pair fmt__debug_utf16_width_and_length(
     return (fmt_Int_Pair) { width, length };
 }
 
-static int fmt__debug_utf32_width(const char32_t *str, int size, bool quote) {
+static int fmt__debug_utf32_width(const fmt_char32_t *str, int size, bool quote) {
     int width = 0;
     if (size < 0) {
         size = fmt__utf32_strlen(str);
@@ -3231,7 +3255,7 @@ static int fmt__debug_utf32_width(const char32_t *str, int size, bool quote) {
 }
 
 static int fmt__debug_write_char(
-    fmt_Writer *writer, char32_t ch, fmt__DebugCharEscapeArgs args
+    fmt_Writer *writer, fmt_char32_t ch, fmt__DebugCharEscapeArgs args
 ) {
     #define O(_ch, _esc) case _ch: return writer->write_data(writer, _esc, 2);
     switch (ch) {
@@ -3264,7 +3288,7 @@ static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len, b
     static const char ESCAPE_ME[] = { FMT__DEBUG_ENUM_COMMON_ESCAPES(O) '"' };
     #undef O
     int written = 0;
-    char32_t codepoint = 0;
+    fmt_char32_t codepoint = 0;
     const char *begin = str;
     const char *end = str;
     int n = 0;
@@ -3291,7 +3315,7 @@ static int fmt__debug_write_utf8(fmt_Writer *writer, const char *str, int len, b
 }
 
 static int fmt__debug_write_utf16(
-    fmt_Writer *restrict writer, const char16_t *restrict str, int len, bool quote
+    fmt_Writer *restrict writer, const fmt_char16_t *restrict str, int len, bool quote
 ) {
     int written = 0;
     FMT__ITER_UTF16(str, len, {
@@ -3304,7 +3328,7 @@ static int fmt__debug_write_utf16(
 }
 
 static int fmt__debug_write_utf32(
-    fmt_Writer *restrict writer, const char32_t *restrict str, int len, bool quote
+    fmt_Writer *restrict writer, const fmt_char32_t *restrict str, int len, bool quote
 ) {
     int written = 0;
     while (len --> 0) {
@@ -3367,7 +3391,7 @@ static int fmt__print_utf8(
 static int fmt__print_utf16(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
-    const char16_t *restrict string,
+    const fmt_char16_t *restrict string,
     int len
 ) {
     const fmt_Int_Pair width_and_length = fs->debug
@@ -3409,7 +3433,7 @@ static int fmt__print_utf16(
 static int fmt__print_utf32(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
-    const char32_t *restrict string,
+    const fmt_char32_t *restrict string,
     int len
 ) {
     const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
@@ -3445,7 +3469,7 @@ static int fmt__print_utf32(
 }
 
 static int fmt__print_char(
-    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, char32_t ch
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, fmt_char32_t ch
 ) {
     const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
     const int width = (fs->debug
@@ -3730,7 +3754,7 @@ static int fmt__print_cash_money(
     const char *symstr = "-$";
 #else
     const char *symstr = nl_langinfo(CRNCYSTR);
-    if (!symstr[1]) {
+    if (!symstr[0] || !symstr[1]) {
         symstr = "-$";
     }
 #endif
@@ -3916,7 +3940,7 @@ static const char * fmt__timezone_name(const struct tm *datetime) {
     size_t unused;
     _get_tzname(&unused, buf, sizeof(buf), 0);
     return buf;
-#elif defined(__USE_MISC)
+#elif defined(__USE_MISC) || defined(__APPLE__)
     // Using this double underscore macro seems quite sketchy but I don't know
     // how else to do it and it works for me :^)
     return datetime->tm_zone;
@@ -3932,7 +3956,7 @@ static void fmt__get_timezone_offset(
     (void)datetime;
     long offset;
     _get_timezone(&offset);
-#elif defined(__USE_MISC)
+#elif defined(__USE_MISC) || defined(__APPLE__)
     long offset = datetime->tm_gmtoff;
 #else
     long offset = datetime->__tm_gmtoff;
@@ -4197,8 +4221,8 @@ static int fmt__print_specifier(
     fmt_Format_Specifier fs;
     union {
         const char *v_string;
-        const char16_t *v_string16;
-        const char32_t *v_string32;
+        const fmt_char16_t *v_string16;
+        const fmt_char32_t *v_string32;
         long long v_signed;
         unsigned long long v_unsigned;
         bool v_bool;
@@ -4235,7 +4259,7 @@ static int fmt__print_specifier(
             sign = 0;
             goto t_string;
         case fmt__TYPE_STRING_16:
-            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char16_t *);
+            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const fmt_char16_t *);
             FMT_PARSE_FS();
             if (value.v_pointer == NULL) {
                 goto t_pointer;
@@ -4243,7 +4267,7 @@ static int fmt__print_specifier(
             sign = 1;
             goto t_string;
         case fmt__TYPE_STRING_32:
-            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const char32_t *);
+            value.v_pointer = va_arg(FMT__VA_LIST_DEREF(ap), const fmt_char32_t *);
             FMT_PARSE_FS();
             if (value.v_pointer == NULL) {
                 goto t_pointer;
@@ -4332,8 +4356,8 @@ t_string:
     } else {
         switch (sign) {
         case 0: FMT_STR_KIND(char, strlen, fmt__utf8_chars_len, fmt__print_utf8);
-        case 1: FMT_STR_KIND(char16_t, fmt__utf16_strlen, fmt__utf16_chars_len, fmt__print_utf16);
-        case 2: FMT_STR_KIND(char32_t, fmt__utf32_strlen, fmt__utf32_chars_len, fmt__print_utf32);
+        case 1: FMT_STR_KIND(fmt_char16_t, fmt__utf16_strlen, fmt__utf16_chars_len, fmt__print_utf16);
+        case 2: FMT_STR_KIND(fmt_char32_t, fmt__utf32_strlen, fmt__utf32_chars_len, fmt__print_utf32);
         }
         fmt_unreachable("unexpected string kind: {}", (int)sign);
     }

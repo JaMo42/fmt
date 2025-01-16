@@ -6,8 +6,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-#include <smallunit.h>
-#include <icecream.h>
+#include "./smallunit.h"
 
 #define FMT_IMPLEMENTATION
 //#define FMT_BIN_GROUP_NIBBLES
@@ -298,7 +297,7 @@ static bool expect_panic_impl(
 
 typedef struct {
     const fmt_char8_t *data;
-    char32_t codepoint;
+    fmt_char32_t codepoint;
     int size;
 } Unicode_Test_Case;
 
@@ -426,7 +425,7 @@ su_module_d(internal_functions, "internal functions", {
             su_assert(memcmp(data, c->data, c->size) == 0);
         }
         // DECODE
-        char32_t codepoint;
+        fmt_char32_t codepoint;
         for (
             const Unicode_Test_Case
                 *c = unicode_test_cases,
@@ -866,7 +865,7 @@ su_module(datetime, {
     datetime_value.tm_wday = 6;
     datetime_value.tm_yday = 7;
     datetime_value.tm_isdst = false; // daylight savings
-    datetime_value.tm_zone = "Hello World";
+    datetime_value.tm_zone = "Timezone name";
     datetime_value.tm_gmtoff = -14400; // -4 hours
     const struct tm *datetime = &datetime_value;
 
@@ -881,7 +880,7 @@ su_module(datetime, {
         expect_time("03:02", "{R}", datetime);
         expect_time("03:02:01", "{T}", datetime);
         expect_time("-0400", "{z}", datetime);
-        expect_time("Hello World", "{Z}", datetime);
+        expect_time("Timezone name", "{Z}", datetime);
     })
 
     su_test("12 hour clock", {
@@ -929,7 +928,13 @@ su_module(datetime, {
         // weekday as a decimal number [1,7], with 1 representing Monday.", but
         // strftime seems to use the range [0,6] like the 'w' field for some
         // reason.
+        #ifdef __APPLE__
+        // The %P specifier is a GNU extension
+        // TODO: %z gives me a different result from strftime than on Linux?
+        const char specifiers[] = "aAbBcCdeFHIjMprRsSwxXyYZ";
+        #else
         const char specifiers[] = "aAbBcCdeFHIjMpPrRsSwxXyYzZ";
+        #endif
         char strftime_format[] = "%_";
         char fmt_format[] = "{_}";
         enum { SIZE = 64};
@@ -1025,6 +1030,7 @@ su_module(writers, {
 })
 
 int main(const int argc, const char **argv) {
+    setlocale(LC_ALL, "C");
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--compact") == 0 || strcmp(argv[i], "-c") == 0) {
             compact_flag = true;
