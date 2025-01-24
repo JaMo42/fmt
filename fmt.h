@@ -281,7 +281,7 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
 
 // Need to define fmt_String here so we can use it to overload the type id function.
 
-struct fmt_String_Take {
+fmt_String_Take {
     char *data;
     size_t size;
 };
@@ -382,7 +382,7 @@ FMT_TYPE_ID(Else, fmt__TYPE_UNKNOWN);
         struct tm *: fmt__TYPE_TIME, \
         const struct tm *: fmt__TYPE_TIME, \
         fmt_String: fmt__TYPE_FMT_STRING, \
-        struct fmt_String_Take: fmt__TYPE_FMT_STRING_TAKE, \
+        fmt_String_Take: fmt__TYPE_FMT_STRING_TAKE, \
         default: fmt__TYPE_UNKNOWN \
     )
 
@@ -427,14 +427,16 @@ typedef struct {
 } fmt_String_Writer;
 
 #ifndef __cplusplus
+/// Proxy type what when passed to a fmt function will cause the `data`
+/// member to be free'd after printing it.
+typedef struct {
+    char *data;
+    size_t size;
+} fmt_String_Take;
+
 typedef struct {
     union {
-        /// Proxy type what when passed to a fmt function will cause the `data`
-        /// member to be free'd after printing it.
-        struct fmt_String_Take {
-            char *data;
-            size_t size;
-        } take;
+        fmt_String_Take take;
 
         struct {
             char *data;
@@ -4321,7 +4323,7 @@ static int fmt__print_specifier(
             goto t_time;
 
         FMT_TID_CASE(fmt__TYPE_FMT_STRING, v_fmt_string, fmt_String, t_fmt_string)
-        FMT_TID_CASE(fmt__TYPE_FMT_STRING_TAKE, v_fmt_string.take, struct fmt_String_Take, t_fmt_string_take)
+        FMT_TID_CASE(fmt__TYPE_FMT_STRING_TAKE, v_fmt_string.take, fmt_String_Take, t_fmt_string_take)
 
         case fmt__TYPE_UNKNOWN:
             // Unknown is also used for all pointers we don't specify an explicit
