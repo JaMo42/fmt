@@ -45,6 +45,17 @@ Unlike on Linux no directives need to be defined or libraries linked.
 
 The library can also be compiled using a C++ compiler which may be useful when mixing both languages without mixing compilers.
 
+### Threading
+
+This library uses standard `threads.h` library because when writing it I didn't know it's somehow less supported than pthreads due to being optional.
+A replacement library that implements the same interface, such as [tinycthread](https://github.com/tinycthread/tinycthread), can be used in it's place by defining `FMT__THREAD_LOCAL` to something that implements a thread local storage class specifier, such as `_Thread_local`:
+
+```c
+#include "tinycthread.h"
+#define FMT__THREAD_LOCAL _Thread_local
+#include "fmt.h"
+```
+
 ## Configuration
 
 All of these only need to be defined in the same file as `FMT_IMPLEMENTATION`.

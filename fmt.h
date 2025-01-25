@@ -16,20 +16,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <ctype.h>
-#ifdef __STDC_NO_THREADS__
-#  if __STDC_VERSION__ <= 201710L
-#    define FMT__THREAD_LOCAL _Thread_local
-#  else
-#    define FMT__THREAD_LOCAL thread_local
-#  endif
-#  ifdef FMT_LOCKED_DEFAULT_PRINTERS
-#    undef FMT_LOCKED_DEFAULT_PRINTERS
-#    error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not available"
-#  endif
-#else
-#  include <threads.h>
-#  define FMT__THREAD_LOCAL thread_local
-#endif
 #include <math.h>
 #include <time.h>
 #include <locale.h>
@@ -38,6 +24,30 @@
 #endif
 #include <wctype.h>
 #include <assert.h>
+
+// Users can use any library that provides the threads.h interface, as long as
+// they provide a definition for FMT__THREAD_LOCAL, so that can also be used as
+// check.  Afterwards FMT_HAS_THREADS must be used as thread local can exist
+// without the rest of the threads library. s
+#ifndef FMT__THREAD_LOCAL
+#  ifdef __STDC_NO_THREADS__
+#    if __STDC_VERSION__ <= 201710L
+#      define FMT__THREAD_LOCAL _Thread_local
+#    else
+#      define FMT__THREAD_LOCAL thread_local
+#    endif
+#    ifdef FMT_LOCKED_DEFAULT_PRINTERS
+#      undef FMT_LOCKED_DEFAULT_PRINTERS
+#      error "FMT_LOCKED_DEFAULT_PRINTERS not supported because <threads.h> is not available"
+#    endif
+#  else // __STDC_NO_THREADS__
+#    include <threads.h>
+#    define FMT__THREAD_LOCAL thread_local
+#    define FMT_HAS_THREADS
+#  endif // __STDC_NO_THREADS__
+#else // FMT__THREAD_LOCAL
+#  define FMT_HAS_THREADS
+#endif // FMT__THREAD_LOCAL
 
 // In theory we don't need to wrap char16_t and char32_t, as uchar.h defines them
 // if they don't exist, but Apple's clang does not have uchar.h for some reason.
@@ -281,7 +291,7 @@ static const char *fmt_Type_Names[fmt__TYPE_ID_COUNT] = {
 
 // Need to define fmt_String here so we can use it to overload the type id function.
 
-fmt_String_Take {
+struct fmt_String_Take {
     char *data;
     size_t size;
 };
@@ -446,11 +456,6 @@ typedef struct {
     };
 } fmt_String;
 #endif
-
-FMT__STATIC_ASSERT(
-    sizeof(fmt_String) == sizeof(char *) + 2 * sizeof(size_t),
-    "fmt_String is too large"
-);
 
 /// Returns an empty string, does not allocate.
 /// Useful for quick and dirty code using `fmt_format`.
