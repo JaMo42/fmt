@@ -1008,12 +1008,143 @@ extern void fmt_translate_strftime(
 #endif /* FMT_H */
 
 
-// MARK: - Implementation
+// MARK: - DETAIL
+
+
+#if defined(FMT_DETAIL) || defined(FMT_IMPLEMENTATION)
+// This seems to work without missing/duplicate definitions in all the cases I
+// tested, but maybe it should just be in the header part, idk.
+#ifndef FMT_DETAIL_DEFINED
+#define FMT_DETAIL_DEFINED
+
+int fmt__min(int a, int b);
+
+////////////////////////////////////////////////////////////////////////////////
+// MARK: - Format specifiers
+////////////////////////////////////////////////////////////////////////////////
+
+typedef enum {
+    fmt_ALIGN_LEFT = 1,
+    fmt_ALIGN_RIGHT,
+    fmt_ALIGN_CENTER,
+    fmt_ALIGN_AFTER_SIGN,
+} fmt_Alignment;
+
+typedef enum {
+    fmt_SIGN_NEGATIVE = 1,
+    fmt_SIGN_SPACE,
+    fmt_SIGN_ALWAYS,
+} fmt_Sign;
+
+typedef struct {
+    fmt_char32_t fill;
+    fmt_Alignment align;
+    fmt_Sign sign;
+    fmt_char32_t group;
+    int precision;
+    int width;
+    char type;
+    bool alternate_form;
+    bool debug;
+} fmt_Format_Specifier;
+
+void fmt__format_specifier_default(fmt_Format_Specifier *spec);
+
+const char * fmt__parse_specifier_after_colon(
+    const char *restrict format_specifier,
+    fmt_Format_Specifier *restrict out,
+    int specifier_number,
+    int *restrict arg_count,
+    fmt__va_list_ref ap
+);
+
+////////////////////////////////////////////////////////////////////////////////
+// MARK: - Printing functions
+////////////////////////////////////////////////////////////////////////////////
+
+int fmt__print_utf8(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const char *restrict string,
+    int len
+);
+
+int fmt__print_utf16(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const fmt_char16_t *restrict string,
+    int len
+);
+
+int fmt__print_utf32(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const fmt_char32_t *restrict string,
+    int len
+);
+
+int fmt__print_char(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, fmt_char32_t ch
+);
+
+int fmt__print_int(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    unsigned long long i,
+    char sign
+);
+
+int fmt__print_bool(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, bool b
+);
+
+int fmt__print_float_decimal(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    double f,
+    char suffix
+);
+
+int fmt__print_float_exponential(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
+);
+
+int fmt__print_float_default(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
+);
+
+int fmt__print_float_general(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
+);
+
+int fmt__print_cash_money(
+    fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
+);
+
+int fmt__print_pointer(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const void *restrict ptr
+);
+
+int fmt__print_time(
+    fmt_Writer *restrict writer,
+    fmt_Format_Specifier *restrict fs,
+    const struct tm *restrict datetime,
+    const char *restrict format,
+    size_t format_length
+);
+
+#endif // FMT_DETAIL_DEFINED
+#endif // FMT_DETAIL || FMT_IMPLEMENTATION
+
+
+// MARK: - IMPLEMENTATION
 
 
 #ifdef FMT_IMPLEMENTATION
 
-static int fmt__min(int a, int b) {
+int fmt__min(int a, int b) {
     return a < b ? a : b;
 }
 
@@ -1914,32 +2045,7 @@ int fmt__write_limited_data(
 // MARK: - Format specifiers
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef enum {
-    fmt_ALIGN_LEFT = 1,
-    fmt_ALIGN_RIGHT,
-    fmt_ALIGN_CENTER,
-    fmt_ALIGN_AFTER_SIGN,
-} fmt_Alignment;
-
-typedef enum {
-    fmt_SIGN_NEGATIVE = 1,
-    fmt_SIGN_SPACE,
-    fmt_SIGN_ALWAYS,
-} fmt_Sign;
-
-typedef struct {
-    fmt_char32_t fill;
-    fmt_Alignment align;
-    fmt_Sign sign;
-    fmt_char32_t group;
-    int precision;
-    int width;
-    char type;
-    bool alternate_form;
-    bool debug;
-} fmt_Format_Specifier;
-
-static void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
+void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
     spec->type = 0;
     spec->fill = ' ';
     spec->align = fmt_ALIGN_LEFT;
@@ -2058,7 +2164,7 @@ static const char * fmt__parse_int(
     return format_specifier;
 }
 
-static const char * fmt__parse_specifier_after_colon(
+const char * fmt__parse_specifier_after_colon(
     const char *restrict format_specifier,
     fmt_Format_Specifier *restrict out,
     int specifier_number,
@@ -3353,7 +3459,7 @@ static int fmt__debug_write_utf32(
 // MARK: - Printing functions
 ////////////////////////////////////////////////////////////////////////////////
 
-static int fmt__print_utf8(
+int fmt__print_utf8(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     const char *restrict string,
@@ -3395,7 +3501,7 @@ static int fmt__print_utf8(
     return written;
 }
 
-static int fmt__print_utf16(
+int fmt__print_utf16(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     const fmt_char16_t *restrict string,
@@ -3437,7 +3543,7 @@ static int fmt__print_utf16(
     return written;
 }
 
-static int fmt__print_utf32(
+int fmt__print_utf32(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     const fmt_char32_t *restrict string,
@@ -3475,7 +3581,7 @@ static int fmt__print_utf32(
     return written;
 }
 
-static int fmt__print_char(
+int fmt__print_char(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, fmt_char32_t ch
 ) {
     const int overhead = fs->debug && !fs->alternate_form ? 2 : 0;
@@ -3508,7 +3614,7 @@ static int fmt__print_char(
     return written;
 }
 
-static int fmt__print_int(
+int fmt__print_int(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     unsigned long long i,
@@ -3555,7 +3661,7 @@ static int fmt__print_int(
     return written;
 }
 
-static int fmt__print_bool(
+int fmt__print_bool(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, bool b
 ) {
     static const char *STRINGS[] = {"false", "true", "no", "yes"};
@@ -3657,7 +3763,7 @@ static int fmt__print_float_decimal_impl(
     return written;
 }
 
-static int fmt__print_float_decimal(
+int fmt__print_float_decimal(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     double f,
@@ -3709,7 +3815,7 @@ static int fmt__print_float_exponential_impl(
     return written;
 }
 
-static int fmt__print_float_exponential(
+int fmt__print_float_exponential(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
@@ -3720,7 +3826,7 @@ static int fmt__print_float_exponential(
     return fmt__print_float_exponential_impl(writer, fs, buf, len, kk, sign);
 }
 
-static int fmt__print_float_default(
+int fmt__print_float_default(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
@@ -3732,7 +3838,7 @@ static int fmt__print_float_default(
     }
 }
 
-static int fmt__print_float_general(
+int fmt__print_float_general(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
@@ -3753,7 +3859,7 @@ static int fmt__print_float_general(
     }
 }
 
-static int fmt__print_cash_money(
+int fmt__print_cash_money(
     fmt_Writer *restrict writer, fmt_Format_Specifier *restrict fs, double f
 ) {
     FMT__FLOAT_SPECIAL_CASES();
@@ -3824,7 +3930,7 @@ static int fmt__print_cash_money(
 #undef FMT__FLOAT_SPECIAL_CASES
 #undef FMT__GRISU2
 
-static int fmt__print_pointer(
+int fmt__print_pointer(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     const void *restrict ptr
@@ -3844,7 +3950,7 @@ static int fmt__write_time_sized(
     const struct tm *datetime
 );
 
-static int fmt__print_time(
+int fmt__print_time(
     fmt_Writer *restrict writer,
     fmt_Format_Specifier *restrict fs,
     const struct tm *restrict datetime,

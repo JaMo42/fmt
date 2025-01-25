@@ -297,6 +297,10 @@ fmt_String fmt_va_format(const char *format, int arg_count, va_list ap);
 fmt_String fmt__format(const char *format, int arg_count, ...);
 ```
 
+#### More
+
+More internals can be exported by defining `FMT_DETAIL` before including the header, however these are not documented.
+
 ## Supported types
 
 Type | Default conversion specifier | Valid conversion specifiers
