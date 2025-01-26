@@ -2661,7 +2661,9 @@ static int fmt__write_grouped(
     return written;
 }
 
-//MARK: - Radices
+////////////////////////////////////////////////////////////////////////////////
+// MARK: - Radices
+////////////////////////////////////////////////////////////////////////////////
 
 #define FMT_DEFINE_WRITE_DIGITS(_name, _div, _buf_size, _grouping_interval, _lookup_string) \
     static int _name(fmt_Writer *writer, uint64_t n, int len) {                \

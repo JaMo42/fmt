@@ -865,7 +865,7 @@ su_module(datetime, {
     datetime_value.tm_wday = 6;
     datetime_value.tm_yday = 7;
     datetime_value.tm_isdst = false; // daylight savings
-    datetime_value.tm_zone = "Timezone name";
+    datetime_value.tm_zone = (char *)"Timezone name";
     datetime_value.tm_gmtoff = -14400; // -4 hours
     const struct tm *datetime = &datetime_value;
 
@@ -995,7 +995,7 @@ su_module(panics, {
 
 su_module(writers, {
     su_test("allocating writer", {
-        enum { COUNT = 1000};
+        enum { COUNT = 1000 };
         fmt_Allocating_String_Writer writer = fmt_aw_new();
         for (int i = 0; i < COUNT; ++i) {
             fmt_write((fmt_Writer*)&writer, "a");

@@ -3,7 +3,7 @@ CFLAGS ?= -Wall -Wextra -std=gnu11
 LDFLAGS =
 
 CXX ?= g++
-CXXFLAGS ?= -Wall -Wextra -D_DEFAULT_SOURCE -std=c++11
+CXXFLAGS ?= -Wall -Wextra -Wno-sign-compare -D_DEFAULT_SOURCE -std=c++11
 
 ifeq ($(RELEASE),1)
 	CFLAGS += -march=native -mtune=native -O3
