@@ -3009,21 +3009,6 @@ static void fmt__grisu_round(
     }
 }
 
-// XXX: same thing as `fmt__unsigned_width_10`, maybe marginally faster because
-// of smaller type.
-static unsigned fmt__decimal_digit_32(uint32_t n) {
-    if (n < 10) return 1;
-    if (n < 100) return 2;
-    if (n < 1000) return 3;
-    if (n < 10000) return 4;
-    if (n < 100000) return 5;
-    if (n < 1000000) return 6;
-    if (n < 10000000) return 7;
-    if (n < 100000000) return 8;
-    if (n < 1000000000) return 9;
-    return 10;
-}
-
 static void fmt__digit_gen(
     fmt__Float W, fmt__Float Mp, uint64_t delta, char *p, int *len, int *K
 ) {
@@ -3034,7 +3019,7 @@ static void fmt__digit_gen(
     const fmt__Float wp_w = fmt__float_sub(Mp, W);
     uint32_t p1 = Mp.f >> -one.e;
     uint64_t p2 = Mp.f & (one.f - 1);
-    int kappa = fmt__decimal_digit_32(p1);
+    int kappa = fmt__unsigned_width_10(p1);
     *len = 0;
 
     while (kappa > 0) {
@@ -3142,7 +3127,7 @@ static int fmt__float_exponential_width(char sign, int len, bool fraction, int e
         + 1 + len * fraction
         + 1 // 'e'
         + (exp < 0)
-        + fmt__decimal_digit_32(exp)
+        + fmt__unsigned_width_10(exp)
     );
 }
 
