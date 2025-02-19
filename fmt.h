@@ -2202,7 +2202,8 @@ const char * fmt__parse_specifier_after_colon(
         // Alignment and codepoint in the string
         out->align = (fmt_Alignment)parsed;
         format_specifier += fmt__utf8_decode((const fmt_char8_t *)format_specifier, &out->fill) + 1;
-    } else if ((parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 2)))) {
+    } else if (format_specifier[1] // If it's a null byte there we can't peek beyond it
+               && (parsed = fmt__parse_alignment(fmt__utf8_peek_ascii(format_specifier, 2)))) {
         // Alignment and parameterized fill character, or opening or closing curly brace
         if (format_specifier[0] == '{' && format_specifier[1] == '}') {
             out->align = (fmt_Alignment)parsed;

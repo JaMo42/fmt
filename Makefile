@@ -8,7 +8,8 @@ CXXFLAGS ?= -Wall -Wextra -Wno-sign-compare -D_DEFAULT_SOURCE -std=c++11
 ifeq ($(RELEASE),1)
 	CFLAGS += -march=native -mtune=native -O3
 else
-	CFLAGS += -g
+	CFLAGS += -g -fsanitize=address
+	LDFLAGS += -fsanitize=address
 endif
 
 ifeq ($(COVERAGE),1)
