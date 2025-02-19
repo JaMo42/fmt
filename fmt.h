@@ -25,6 +25,10 @@
 #include <wctype.h>
 #include <assert.h>
 
+////////////////////////////////////////////////////////////////////////////////
+// MARK: - Compatibility & Configuration
+////////////////////////////////////////////////////////////////////////////////
+
 // Users can use any library that provides the threads.h interface, as long as
 // they provide a definition for FMT__THREAD_LOCAL, so that can also be used as
 // check.  Afterwards FMT_HAS_THREADS must be used as thread local can exist
@@ -127,6 +131,23 @@ typedef va_list fmt__va_list_ref;
 #define FMT__VA_LIST_REF(ap) ap
 #define FMT__VA_LIST_DEREF(ap) ap
 #endif
+
+////////////////////////////////////////////////////////////////////////////////
+// MARK: - Short Names
+////////////////////////////////////////////////////////////////////////////////
+
+#ifndef FMT_NO_SHORT_NAMES
+#define print fmt_print
+#define println fmt_println
+#define eprint fmt_eprint
+#define eprintln fmt_eprintln
+
+#define panic fmt_panic
+
+#define todo fmt_todo
+#define unimplemented fmt_unimplemented
+#define unreachable fmt_unreachable
+#endif 
 
 ////////////////////////////////////////////////////////////////////////////////
 // MARK: - Recursive macros
@@ -2665,14 +2686,17 @@ static int fmt__write_grouped(
 // MARK: - Radices
 ////////////////////////////////////////////////////////////////////////////////
 
+// Note: `buf` is always offset by 1 here with the first byte always being
+// used since we copy digits in pairs but if we have an odd number of digits
+// like 123 we need the extra digit to go somewhere.
 #define FMT_DEFINE_WRITE_DIGITS(_name, _div, _buf_size, _grouping_interval, _lookup_string) \
     static int _name(fmt_Writer *writer, uint64_t n, int len) {                \
         if (n == 0) {                                                          \
             return writer->write_byte(writer, '0');                            \
         }                                                                      \
         const char *digitpairs = _lookup_string;                               \
-        char buf[_buf_size];                                                   \
-        char *p = buf + len - 2;                                               \
+        char buf[_buf_size + 1];                                               \
+        char *p = buf + 1 + len - 2;                                           \
         int idx;                                                               \
         while (n) {                                                            \
             idx = (n % _div) * 2;                                              \
@@ -2680,15 +2704,15 @@ static int fmt__write_grouped(
             p -= 2;                                                            \
             n /= _div;                                                         \
         }                                                                      \
-        return writer->write_data(writer, buf, len);                           \
+        return writer->write_data(writer, buf + 1, len);                       \
     }                                                                          \
     static int _name##_grouped(fmt_Writer *writer, uint64_t n, int len, fmt_char32_t groupchar) { \
         if (n == 0) {                                                          \
             return writer->write_byte(writer, '0');                            \
         }                                                                      \
         const char *digitpairs = _lookup_string;                               \
-        char buf[_buf_size];                                                   \
-        char *p = buf + len - 2;                                               \
+        char buf[_buf_size + 1];                                               \
+        char *p = buf + 1 + len - 2;                                           \
         int idx;                                                               \
         while (n) {                                                            \
             idx = (n % _div) * 2;                                              \
@@ -2696,7 +2720,7 @@ static int fmt__write_grouped(
             p -= 2;                                                            \
             n /= _div;                                                         \
         }                                                                      \
-        return fmt__write_grouped(writer, buf, len, groupchar, _grouping_interval); \
+        return fmt__write_grouped(writer, buf + 1, len, groupchar, _grouping_interval); \
     }
 
 #ifdef FMT_BIN_GROUP_NIBBLES
