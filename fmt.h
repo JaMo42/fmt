@@ -1041,6 +1041,16 @@ extern void fmt_translate_strftime(
 int fmt__min(int a, int b);
 
 ////////////////////////////////////////////////////////////////////////////////
+// MARK: - Unicode utilities
+////////////////////////////////////////////////////////////////////////////////
+
+int fmt__display_width(fmt_char32_t ucs);
+
+int fmt__utf8_decode(const fmt_char8_t *restrict data, fmt_char32_t *restrict codepoint);
+
+int fmt__utf8_encode(fmt_char32_t codepoint, char *buf);
+
+////////////////////////////////////////////////////////////////////////////////
 // MARK: - Format specifiers
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1723,7 +1733,7 @@ static int fmt__ascii_display_width(char ch_) {
 
 #ifdef FMT_FAST_DISPLAY_WIDTH
 /// Returns the display width of a non-zero-width character.
-static int fmt__display_width(fmt_char32_t ucs) {
+int fmt__display_width(fmt_char32_t ucs) {
     /* test for 8-bit control characters */
     if (ucs < 32 || (ucs >= 0x7f && ucs < 0xa0))
         return 0;
@@ -1743,12 +1753,14 @@ static int fmt__display_width(fmt_char32_t ucs) {
       (ucs >= 0x30000 && ucs <= 0x3fffd)));
 }
 #else
-#  define fmt__display_width fmt__mk_wcwidth
+int fmt__display_width(fmt_char32_t ucs) {
+    return fmt__mk_wcwidth(ucs);
+}
 #endif
 
 /// Decodes 1 codepoint from valid UTF-8 data.  Returns the number of bytes the
 /// codepoint uses.
-static int fmt__utf8_decode(
+int fmt__utf8_decode(
     const fmt_char8_t *restrict data, fmt_char32_t *restrict codepoint
 ) {
     if (data[0] < 0x80) {
@@ -1865,7 +1877,7 @@ static int fmt__utf32_width(const fmt_char32_t *str, int size) {
     return width;
 }
 
-static int fmt__utf8_encode(fmt_char32_t codepoint, char *buf) {
+int fmt__utf8_encode(fmt_char32_t codepoint, char *buf) {
     static const char REPLACEMENT_CHARACTER_UTF8[] = "\xEF\xBF\xBD";
     if (!fmt__is_valid_codepoint(codepoint)) {
         *buf++ = REPLACEMENT_CHARACTER_UTF8[0];
