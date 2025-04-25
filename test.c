@@ -655,7 +655,7 @@ su_module(formatting, {
         expect("1.2e3", "{e:.1}", 1234.0);
         expect("inf", "{:.1}", INFINITY);
         expect("java", "{:.4}", "javascript");
-        expect("안녕", "{:.2}", "안녕하세요");
+        expect("안녕", "{:.$2}", "안녕하세요");
         // Booleans are treated as strings
         // The cast to bool is needed for C11 builds
         expect("t", "{:.1}", (bool)true);

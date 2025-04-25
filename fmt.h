@@ -1067,12 +1067,22 @@ typedef enum {
     fmt_SIGN_ALWAYS,
 } fmt_Sign;
 
+typedef enum {
+    fmt_PRECISION_UNITS,
+    fmt_PRECISION_CODEPOINTS,
+    fmt_PRECISION_CODEPOINTS_SZ,
+} fmt_Precision_Mode;
+
 typedef struct {
     fmt_char32_t fill;
     fmt_Alignment align;
     fmt_Sign sign;
     fmt_char32_t group;
     int precision;
+    /// Precision field specifies number of codepoints instead of units.
+    bool alt_precision;
+    /// With alt_precision; stop on null unit. Ignored without alt_precision.
+    bool sz_precision;
     int width;
     char type;
     bool alternate_form;
@@ -1174,6 +1184,8 @@ int fmt__print_time(
 
 
 #ifdef FMT_IMPLEMENTATION
+#ifndef FMT_DEFINED
+#define FMT_DEFINED
 
 int fmt__min(int a, int b) {
     return a < b ? a : b;
@@ -1816,7 +1828,12 @@ static fmt_Int_Pair fmt__utf8_width_and_length(
     const fmt_char8_t *p = (const fmt_char8_t *)str;
     const fmt_char8_t *end = p + size;
     fmt_char32_t codepoint;
-    while (p != end) {
+    // XXX: when taking a unit-precision we could truncate a sequence here,
+    // changing the loop to use less than fixes the loop at least but the
+    // decode could still read out of bounds if there actually is no more data.
+    // I suppose it could be ignored since the library requires valid UTF-8 so
+    // that requirement can naturally extend to unit precisions too.
+    while (p < end) {
         p += fmt__utf8_decode(p, &codepoint);
         if (max_chars_for_width-- > 0) {
             width += fmt__display_width(codepoint);
@@ -1992,10 +2009,13 @@ static int fmt__write_utf32(
     return buf.written;
 }
 
-static int fmt__utf8_chars_len(const char *str, int chars) {
+// Note: these `char_len` functions return the number of units the of the
+//       encoded string for the given amount of codepoints.
+
+static int fmt__utf8_chars_len(const char *str, int chars, bool nullterm) {
     int length = 0;
     int cp_len;
-    while (chars--) {
+    while ((!nullterm || *str) && chars--) {
         cp_len = fmt__utf8_codepoint_length(*str);
         length += cp_len;
         str += cp_len;
@@ -2003,10 +2023,14 @@ static int fmt__utf8_chars_len(const char *str, int chars) {
     return length;
 }
 
-static int fmt__utf16_chars_len(const fmt_char16_t *str, int chars) {
+static int fmt__utf16_chars_len(const fmt_char16_t *str, int chars, bool nullterm) {
     int length = 0;
-    while (chars--) {
+    while ((!nullterm || *str) && chars--) {
         if (*str >= 0xD800 && *str <= 0xDBFF) {
+            // TODO
+            // This wasn't here but I think it should be? Didn't affect any
+            // current tests and I'm doing something else right now.
+            ++length;
             ++str;
         }
         ++length;
@@ -2015,11 +2039,16 @@ static int fmt__utf16_chars_len(const fmt_char16_t *str, int chars) {
     return length;
 }
 
-static int fmt__utf32_chars_len(const fmt_char32_t *str, int chars) {
-    // this function is useless now but we still need for the table in
-    // fmt__print_specifier.
-    (void)str;
-    return chars;
+static int fmt__utf32_chars_len(const fmt_char32_t *str, int chars, bool nullterm) {
+    if (nullterm) {
+        int actual = 0;
+        while (*str && chars--) {
+            ++actual;
+        }
+        return actual;
+    } else {
+        return chars;
+    }
 }
 
 static const char * fmt__utf8_skip(const char *str, int n) {
@@ -2087,6 +2116,8 @@ void fmt__format_specifier_default(fmt_Format_Specifier *spec) {
     spec->width = 0;
     spec->group = 0;
     spec->precision = -1;
+    spec->alt_precision = false;
+    spec->sz_precision = false;
     spec->debug = false;
 }
 
@@ -2302,6 +2333,22 @@ const char * fmt__parse_specifier_after_colon(
     // Precision
     if (*format_specifier == '.') {
         ++format_specifier;
+        // Note sure about the characters here but I just want to have it and
+        // not dwell on that.
+        // I've considered adding an auxillary type for the precision so the
+        // two aternate modes could be represented as function calls when
+        // providing the parameterized value, but then we'd need to add type
+        // IDs for them too and handle those everywhere else as well, so I
+        // think keeping it in the format string is best.
+        if (*format_specifier == '$') {
+            ++format_specifier;
+            out->alt_precision = true;
+            out->sz_precision = true;
+        } else if (*format_specifier == '!') {
+            ++format_specifier;
+            out->alt_precision = true;
+            out->sz_precision = false;
+        }
         format_specifier = fmt__parse_int(
             format_specifier, "precision", &out->precision, specifier_number, arg_count, ap
         );
@@ -4283,7 +4330,15 @@ t_string:
     if (spec.precision < 0) {
         length = strlen(value.v_string);
     } else {
-        length = fmt__utf8_chars_len(value.v_string, spec.precision);
+        if (!spec.alt_precision) {
+            length = spec.precision;
+        } else {
+            length = fmt__utf8_chars_len(
+                value.v_string,
+                spec.precision,
+                spec.sz_precision
+            );
+        }
     }
     return fmt__print_utf8(writer, &spec, value.v_string, length);
 }
@@ -4485,7 +4540,15 @@ t_string:
         if (fs.precision < 0) {                                             \
             length = _bytelenfn((const _type*)value.v_pointer);             \
         } else {                                                            \
-            length = _cplenfn((const _type*)value.v_pointer, fs.precision); \
+            if (!fs.alt_precision) { \
+                length = fs.precision; \
+            } else { \
+                length = _cplenfn( \
+                    (const _type*)value.v_pointer, \
+                    fs.precision, \
+                    fs.alt_precision \
+                ); \
+            } \
         }                                                                   \
         return _printfn(writer, &fs, (const _type*)value.v_pointer, length)
     if (fs.type == 'p' || fs.type == 'P') {
@@ -4814,6 +4877,8 @@ fmt_String fmt_format_time(
 
 #undef FMT__BUFCHR
 
+#endif /* FMT_DEFINED */
+#undef FMT_IMPLEMENTATION
 #endif /* FMT_IMPLEMENTATION */
 
 #ifdef FMT__MY_RESTRICT

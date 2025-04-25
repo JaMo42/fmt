@@ -1,6 +1,6 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -std=gnu11
-LDFLAGS =
+CFLAGS ?= -Wall -Wextra -std=gnu11 -fsanitize=address
+LDFLAGS = -fsanitize=address
 
 CXX ?= g++
 CXXFLAGS ?= -Wall -Wextra -Wno-sign-compare -D_DEFAULT_SOURCE -std=c++11

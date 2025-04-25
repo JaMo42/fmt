@@ -132,7 +132,10 @@ There are few differences compared to usual implementations to note here:
 
 - The field width takes display width into account (i.e. `가` is 2 width, `a` is 1 wide)
 
-- The precision field for strings specifies the number of Unicode codepoints.
+- The precision field for strings has 3 modes:
+    - `.123` specifies the number of units, for example bytes in UTF-8.
+    - `.$123` specifiers the MAXIMUM number of codepoints, stopping on a null terminator
+    - `.!123` specifies an exact number of codepoints to be printed
 
 - `?` enables the debug format, similar to rust.
   In this library this only affects characters and strings, which will be printed with quotation marks and non-printable characters will be escaped.
