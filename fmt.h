@@ -1226,6 +1226,10 @@ static size_t fmt__va_get_unsigned_integer(fmt__va_list_ref ap) {
         if (n < 0) goto negative;
         return n;
     }
+    case fmt__TYPE_UNSIGNED: {
+        unsigned n = va_arg(FMT__VA_LIST_DEREF(ap), unsigned);
+        return n;
+    }
     case fmt__TYPE_UNSIGNED_LONG: {
         unsigned long n = va_arg(FMT__VA_LIST_DEREF(ap), unsigned long);
         return n;
